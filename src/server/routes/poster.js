@@ -4,6 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const db = require('../db');
+const geminiService = require('../services/geminiService');
 
 // 配置文件上传
 const storage = multer.diskStorage({
@@ -69,7 +70,7 @@ router.post('/upload-image', upload.single('product_image'), async (req, res) =>
 // 生成海报
 router.post('/generate', async (req, res) => {
   try {
-    const { imageId, productName, features, promptId } = req.body;
+    const { imageId, productName, features, promptId, username } = req.body;
 
     if (!imageId || !productName) {
       return res.status(400).json({ error: '缺少必要参数' });
@@ -90,8 +91,9 @@ router.post('/generate', async (req, res) => {
         promptTemplate = await db.prompts.get(promptId);
       } else {
         // 获取默认提示词模板
-        // 这里简化处理，实际应用需要查询默认模板
-        promptTemplate = { template: "创建一个展示{productName}的市场营销海报。突出以下特点：{features}" };
+        promptTemplate = { 
+          template: "创建一个展示{productName}的市场营销海报。突出以下特点：{features}。使用专业的设计风格，确保产品图片清晰可见。" 
+        };
       }
     } catch (error) {
       return res.status(500).json({ error: '获取提示词模板失败' });
@@ -102,35 +104,56 @@ router.post('/generate', async (req, res) => {
       .replace('{productName}', productName)
       .replace('{features}', features || '');
 
-    // TODO: 调用Gemini API生成海报
-    // 这里是模拟，实际项目中需要对接Gemini API
-    const posterResult = {
-      id: `poster_${Date.now()}`,
-      imageUrl: `/uploads/posters/sample-poster.jpg`, // 模拟的海报URL
-      prompt: fullPrompt,
-      productName,
-      features,
-      sourceImageId: imageId,
-      createdAt: new Date().toISOString()
-    };
-
-    // 保存海报信息
-    await db.posters.put(posterResult.id, posterResult);
-
-    // 记录使用统计
-    const analyticsId = `analytics_${Date.now()}`;
-    await db.analytics.put(analyticsId, {
-      type: 'poster_generation',
-      posterId: posterResult.id,
-      timestamp: new Date().toISOString()
-    });
-
-    res.json({
-      success: true,
-      poster: posterResult
-    });
+    try {
+      // 调用Gemini API生成海报
+      const geminiResponse = await geminiService.generatePoster(imageInfo.path, fullPrompt);
+      
+      // 从响应中提取图片数据
+      const imageData = geminiService.extractImageFromResponse(geminiResponse);
+      
+      if (!imageData) {
+        return res.status(500).json({ error: '生成海报失败，未返回有效图片数据' });
+      }
+      
+      // 保存生成的海报图片
+      const posterFilename = `poster-${Date.now()}.jpg`;
+      const posterUrl = await geminiService.savePosterImage(imageData, posterFilename);
+      
+      // 保存海报信息
+      const posterId = `poster_${Date.now()}`;
+      const posterData = {
+        id: posterId,
+        username: username || 'anonymous',
+        imageUrl: posterUrl,
+        sourceImageId: imageId,
+        productName,
+        features,
+        promptId: promptId || 'default',
+        prompt: fullPrompt,
+        createdAt: new Date().toISOString()
+      };
+      
+      await db.posters.put(posterId, posterData);
+      
+      // 记录使用统计
+      const analyticsId = `analytics_${Date.now()}`;
+      await db.analytics.put(analyticsId, {
+        type: 'poster_generation',
+        posterId: posterId,
+        username: username || 'anonymous',
+        timestamp: new Date().toISOString()
+      });
+      
+      res.json({
+        success: true,
+        poster: posterData
+      });
+    } catch (error) {
+      console.error('生成海报失败:', error);
+      res.status(500).json({ error: `生成海报失败: ${error.message}` });
+    }
   } catch (error) {
-    console.error('生成海报失败:', error);
+    console.error('处理海报生成请求失败:', error);
     res.status(500).json({ error: '生成海报失败' });
   }
 });
@@ -138,13 +161,17 @@ router.post('/generate', async (req, res) => {
 // 获取所有海报
 router.get('/', async (req, res) => {
   try {
+    const { username } = req.query;
     const posters = [];
     
-    // 从数据库获取所有海报
+    // 从数据库获取海报
     await new Promise((resolve, reject) => {
       db.posters.createReadStream()
         .on('data', (data) => {
-          posters.push(data.value);
+          // 如果指定了用户名，只返回该用户的海报
+          if (!username || data.value.username === username) {
+            posters.push(data.value);
+          }
         })
         .on('error', (err) => {
           reject(err);
@@ -197,10 +224,18 @@ router.delete('/:id', async (req, res) => {
     
     try {
       // 检查海报是否存在
-      await db.posters.get(posterId);
+      const poster = await db.posters.get(posterId);
       
       // 删除海报
       await db.posters.del(posterId);
+
+      // 尝试删除对应的海报图片文件
+      if (poster.imageUrl) {
+        const filePath = path.join(__dirname, '../../../', poster.imageUrl.replace(/^\//, ''));
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      }
       
       res.json({
         success: true,

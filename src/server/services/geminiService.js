@@ -59,6 +59,9 @@ Make the poster visually appealing with a strong brand presence and compelling t
 The poster should include these product features prominently: ${prompt}
 IMPORTANT: Generate a complete image of the poster, not just text describing it.`;
 
+      // 读取图片文件并转换为base64
+      const imageData = await imageToBase64(imagePath);
+      
       // 初始化客户端
       const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
       
@@ -74,10 +77,20 @@ IMPORTANT: Generate a complete image of the poster, not just text describing it.
         }
       });
       
-      console.log('发送API请求...');
+      console.log('准备发送API请求，同时提交文本和图片...');
       
-      // 发送请求
-      const result = await model.generateContent(enhancedPrompt);
+      // 创建包含图片的内容部分
+      const fileObject = {
+        data: Buffer.from(imageData, 'base64'),
+        mimeType: 'image/jpeg'
+      };
+      
+      // 将文本和图片组合成内容数组发送请求
+      const result = await model.generateContent([
+        enhancedPrompt, 
+        fileObject
+      ]);
+      
       const response = await result.response;
       
       console.log(`Gemini API响应成功`);

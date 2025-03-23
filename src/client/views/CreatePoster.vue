@@ -10,6 +10,11 @@
         <el-form :model="productInfo" label-position="top">
           <el-form-item label="产品名称">
             <el-input v-model="productInfo.name" placeholder="例如：RGB智能LED灯带"></el-input>
+            <div class="quick-product-select">
+              <el-button size="small" @click="selectProduct('灯带')">灯带</el-button>
+              <el-button size="small" @click="selectProduct('直条灯')">直条灯</el-button>
+              <el-button size="small" @click="selectProduct('广告发光模组')">广告发光模组</el-button>
+            </div>
           </el-form-item>
           
           <el-form-item label="产品特点">
@@ -21,13 +26,22 @@
             ></el-input>
           </el-form-item>
 
-          <el-form-item label="目标客户群体">
-            <el-select v-model="productInfo.targetAudience" placeholder="选择目标客户群体">
+          <el-form-item label="产品使用场景">
+            <el-select v-model="productInfo.targetAudience" placeholder="选择产品使用场景">
               <el-option label="家庭用户" value="家庭用户"></el-option>
               <el-option label="商业场所" value="商业场所"></el-option>
               <el-option label="办公环境" value="办公环境"></el-option>
               <el-option label="工程项目" value="工程项目"></el-option>
             </el-select>
+          </el-form-item>
+          
+          <el-form-item label="使用场景详细描述">
+            <el-input
+              type="textarea"
+              v-model="productInfo.sceneDescription"
+              :rows="3"
+              placeholder="请描述产品的具体使用场景，例如：用于酒店走廊照明，需要柔和光线和RGB颜色变化效果"
+            ></el-input>
           </el-form-item>
           
           <el-form-item label="产品图片">
@@ -40,9 +54,11 @@
               name="product_image"
             >
               <img v-if="productInfo.image" :src="productInfo.image" class="uploaded-image" />
-              <el-icon v-else><Plus /></el-icon>
-              <div class="el-upload__text">
-                拖拽图片到此处，或<em>点击上传</em>
+              <div v-else>
+                <el-icon><Plus /></el-icon>
+                <div class="el-upload__text">
+                  拖拽图片到此处，或<em>点击上传</em>
+                </div>
               </div>
               <template #tip>
                 <div class="el-upload__tip">
@@ -53,63 +69,52 @@
           </el-form-item>
 
           <el-form-item>
-            <el-button type="primary" @click="generatePoster" :loading="isGenerating" :disabled="!canGenerate" class="generate-btn">
-              {{ isGenerating ? '正在生成...' : '生成海报' }}
+            <el-button type="primary" @click="generateProposals" :loading="isGeneratingProposals" :disabled="!canGenerateProposals" class="generate-btn">
+              {{ isGeneratingProposals ? '正在生成方案...' : '生成海报方案' }}
             </el-button>
             <el-button @click="resetForm">重置</el-button>
           </el-form-item>
         </el-form>
       </div>
       
-      <!-- 第二栏：提示词模板 -->
+      <!-- 第二栏：设计方案选择 -->
       <div class="prompt-section">
-        <h3>提示词设置</h3>
+        <h3>设计方案选择</h3>
         
-        <!-- 模板选择部分 -->
-        <div class="template-selection-section">
-          <h4>选择模板</h4>
-          <div class="template-carousel">
-            <div class="template-cards">
-              <div 
-                v-for="template in templates" 
-                :key="template.templateId"
-                :class="['template-card-compact', selectedTemplate && selectedTemplate.templateId === template.templateId ? 'selected' : '']"
-                @click="selectTemplate(template)"
-              >
-                <div class="template-header">
-                  <span class="template-title">{{ template.productType }} - {{ template.styleType }}</span>
-                  <el-rate 
-                    v-model="template.score"
-                    disabled
-                    text-color="#ff9900"
-                    show-score
-                    :size="'small'"
-                  ></el-rate>
+        <!-- 方案选择部分 -->
+        <div v-if="proposals.length === 0 && !isGeneratingProposals" class="empty-proposals">
+          <el-empty description="填写产品信息并点击生成海报方案按钮"></el-empty>
+        </div>
+        
+        <div v-if="proposals.length > 0" class="proposals-container">
+          <h4>选择设计方案</h4>
+          
+          <div class="proposals-list">
+            <div
+              v-for="proposal in proposals"
+              :key="proposal.proposalId"
+              :class="['proposal-card', selectedProposal && selectedProposal.proposalId === proposal.proposalId ? 'selected' : '']"
+              @click="showProposalDetails(proposal)"
+            >
+              <div class="proposal-header">
+                <span class="proposal-title">{{ proposal.styleName }}</span>
                 </div>
-                <div class="template-footer">
-                  <span class="template-scene">{{ template.applicationScene }}</span>
-                  <span class="template-size">{{ template.posterSize }}</span>
+              <div class="proposal-description">
+                {{ proposal.styleDescription }}
                 </div>
+              <div class="proposal-details">
+                <div class="proposal-detail">
+                  <strong>风格:</strong> {{ proposal.overallStyle }}
               </div>
+                <div class="proposal-detail">
+                  <strong>场景:</strong> {{ getBriefBackground(proposal.background) }}
+                </div>
+                <div class="proposal-detail">
+                  <strong>色调:</strong> {{ getBriefColorTone(proposal.colorTone) }}
+                </div>
             </div>
           </div>
         </div>
-        
-        <div class="prompt-preview">
-          <h4>海报生成提示词预览</h4>
-          <el-input
-            type="textarea"
-            :rows="5"
-            placeholder="选择模板后将显示生成的提示词"
-            v-model="finalPrompt"
-            readonly
-          ></el-input>
-        </div>
-        
-        <!-- 生成进度区域 -->
-        <div v-if="isGenerating" class="generation-progress">
-          <el-progress :percentage="generationProgress" :status="generationStatus"></el-progress>
-          <div class="progress-text">{{ progressMessage }}</div>
         </div>
       </div>
       
@@ -118,7 +123,7 @@
         <h3>生成结果</h3>
         
         <div v-if="!generatedPoster && !isGenerating" class="empty-result">
-          <el-empty description="填写产品信息并点击生成海报按钮"></el-empty>
+          <el-empty description="选择设计方案并点击生成海报按钮"></el-empty>
         </div>
         
         <div v-if="generatedPoster" class="poster-result">
@@ -139,6 +144,128 @@
         </div>
       </div>
     </div>
+
+    <!-- 方案详情弹窗 -->
+    <el-dialog
+      v-model="proposalDialogVisible"
+      title="设计方案详情"
+      width="500px"
+    >
+      <div v-if="currentProposalDetails" class="proposal-details-full">
+        <div class="proposal-detail-item">
+          <strong>产品位置:</strong> {{ currentProposalDetails.position }}
+        </div>
+        <div class="proposal-detail-item">
+          <strong>背景描述:</strong> {{ currentProposalDetails.background }}
+        </div>
+        <div class="proposal-detail-item">
+          <strong>特点位置:</strong> {{ currentProposalDetails.featurePosition }}
+        </div>
+        <div class="proposal-detail-item">
+          <strong>整体布局:</strong> {{ currentProposalDetails.layout }}
+        </div>
+        <div class="proposal-detail-item">
+          <strong>背景质感:</strong> {{ currentProposalDetails.backgroundDesc }}
+        </div>
+        <div class="proposal-detail-item">
+          <strong>光影设计:</strong> {{ currentProposalDetails.lightingRequirements }}
+        </div>
+        <div class="proposal-detail-item">
+          <strong>文字设计:</strong> {{ currentProposalDetails.textRequirements }}
+        </div>
+        <div class="proposal-detail-item">
+          <strong>色调:</strong> {{ currentProposalDetails.colorTone }}
+        </div>
+        <div class="proposal-detail-item">
+          <strong>海报尺寸:</strong> {{ currentProposalDetails.posterSize }}
+        </div>
+        
+        <!-- 新增的产品与背景环境协调的展示部分 -->
+        <div v-if="currentProposalDetails.integrationElements" class="proposal-section">
+          <h4 class="section-title">产品与环境协调</h4>
+          <div class="proposal-detail-item">
+            <strong>光线融合:</strong> {{ currentProposalDetails.integrationElements.lightIntegration }}
+          </div>
+          <div class="proposal-detail-item">
+            <strong>安装位置:</strong> {{ currentProposalDetails.integrationElements.installationContext }}
+          </div>
+          <div class="proposal-detail-item">
+            <strong>视觉和谐:</strong> {{ currentProposalDetails.integrationElements.visualHarmony }}
+          </div>
+        </div>
+        
+        <!-- 新增的海报文字内容展示部分 -->
+        <div v-if="currentProposalDetails.displayedText" class="proposal-section">
+          <h4 class="section-title">海报文字内容</h4>
+          <div class="proposal-detail-item">
+            <strong>主标题:</strong> {{ currentProposalDetails.displayedText.headline }}
+          </div>
+          <div class="proposal-detail-item">
+            <strong>特点:</strong> {{ Array.isArray(currentProposalDetails.displayedText.features) ? currentProposalDetails.displayedText.features.join(', ') : currentProposalDetails.displayedText.features }}
+          </div>
+          <div class="proposal-detail-item">
+            <strong>标语:</strong> {{ currentProposalDetails.displayedText.tagline }}
+          </div>
+        </div>
+      </div>
+      <div class="prompt-actions" v-if="finalPrompt && selectedProposal">
+        <el-button 
+          type="primary" 
+          size="small" 
+          @click="showOriginalPrompt"
+        >
+          查看元提示词
+        </el-button>
+        <el-button 
+          type="success" 
+          size="small" 
+          @click="showOptimizedPrompt"
+          :disabled="!finalPrompt"
+        >
+          查看Gemini提示词
+        </el-button>
+      </div>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="proposalDialogVisible = false">关闭</el-button>
+          <el-button type="primary" @click="selectProposalFromDialog">选择此方案</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
+    <!-- 生成进度对话框 -->
+    <el-dialog
+      v-model="progressDialogVisible"
+      :title="progressDialogTitle"
+      width="400px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :show-close="false"
+    >
+      <div class="progress-dialog-content">
+        <el-progress :percentage="dialogProgress" :status="dialogProgressStatus"></el-progress>
+        <div class="progress-dialog-text">{{ dialogProgressMessage }}</div>
+      </div>
+    </el-dialog>
+
+    <!-- 提示词对话框 -->
+    <el-dialog
+      v-model="promptDialogVisible"
+      :title="dialogPromptTitle"
+      width="800px"
+      :close-on-click-modal="true"
+      :close-on-press-escape="true"
+      :show-close="true"
+    >
+      <div class="prompt-dialog-content">
+        <div class="prompt-dialog-text">{{ dialogPromptContent }}</div>
+      </div>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="promptDialogVisible = false">关闭</el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -153,18 +280,23 @@ export default {
   data() {
     return {
       productInfo: {
-        name: 'LED灯管',
+        name: 'LED灯带',
         features: '高亮度\n高光效\n高性价比',
         targetAudience: '工程项目',
+        sceneDescription: '',
         image: ''
       },
-      prompts: [],
-      selectedPromptId: '',
-      productType: 'LED灯带',
-      applicationScene: '商业空间',
-      styleType: '科技未来',
-      productTemplates: [],
-      selectedTemplateId: '',
+      // 新增方案相关数据
+      proposals: [],
+      selectedProposal: null,
+      proposalsSessionId: '',
+      isGeneratingProposals: false,
+      proposalsProgress: 0,
+      proposalsStatus: '',
+      proposalsMessage: '',
+      proposalsInterval: null,
+      
+      // 保留原有数据
       finalPrompt: '',
       finalPromptEn: '',
       generatedPoster: '',
@@ -175,150 +307,350 @@ export default {
       generationStatus: '',
       progressMessage: '',
       progressInterval: null,
-      templates: [],
-      selectedTemplate: null
+      proposalDialogVisible: false,
+      currentProposalDetails: null,
+      progressDialogVisible: false,
+      progressDialogTitle: '',
+      dialogProgress: 0,
+      dialogProgressStatus: '',
+      dialogProgressMessage: '',
+      promptDialogVisible: false,
+      dialogPromptTitle: '',
+      dialogPromptContent: '',
     }
   },
   computed: {
-    selectedPrompt() {
-      return this.prompts.find(p => p.id === this.selectedPromptId);
-    },
-    renderedPrompt() {
-      if (!this.selectedPrompt) return '';
-      
-      let template = this.selectedPrompt.template;
-      template = template.replace('{productName}', this.productInfo.name || '产品名称');
-      
-      const featuresText = this.productInfo.features ? 
-        this.productInfo.features.split('\n').join('、') : 
-        '产品特点';
-      
-      template = template.replace('{features}', featuresText);
-      
-      return template;
-    },
-    selectedTemplate() {
-      return this.productTemplates.find(t => t.templateId === this.selectedTemplateId);
-    },
-    canGenerate() {
-      const result = this.productInfo.name && 
+    // 能否生成方案的判断条件
+    canGenerateProposals() {
+      return this.productInfo.name && 
              this.productInfo.features && 
-             this.productInfo.image &&
-             this.selectedTemplateId;
-      return result;
+             this.productInfo.image;
+    },
+    
+    // 能否生成海报的判断条件
+    canGenerate() {
+      return this.selectedProposal && this.productInfo.image;
     }
-  },
-  watch: {
-    selectedTemplateId: {
-      handler(newVal) {
-        if (newVal) {
-          this.generateFinalPrompt();
-        }
-      }
-    }
-  },
-  mounted() {
-    this.fetchPrompts();
-    this.fetchProductTemplates();
-    this.fetchTemplates();
   },
   methods: {
-    async fetchPrompts() {
-      try {
-        const response = await fetch('/api/prompts');
-        const data = await response.json();
-        
-        if (data.success) {
-          this.prompts = data.prompts;
-          // 默认选择第一个提示词
-          if (this.prompts.length > 0) {
-            this.selectedPromptId = this.prompts[0].id;
-          }
-        }
-      } catch (error) {
-        console.error('获取提示词失败:', error);
-        this.$message.error('获取提示词模板失败，请刷新页面重试');
-      }
+    // 添加快速选择产品类型的方法
+    selectProduct(productName) {
+      this.productInfo.name = 'LED' + productName;
     },
     
-    async fetchProductTemplates() {
-      try {
-        let url = '/api/prompts/product-templates';
-        const queryParams = [];
-        
-        if (this.productType) {
-          queryParams.push(`productType=${encodeURIComponent(this.productType)}`);
-        }
-        
-        if (this.applicationScene) {
-          queryParams.push(`applicationScene=${encodeURIComponent(this.applicationScene)}`);
-        }
-        
-        if (this.styleType) {
-          queryParams.push(`styleType=${encodeURIComponent(this.styleType)}`);
-        }
-        
-        if (queryParams.length > 0) {
-          url += '?' + queryParams.join('&');
-        }
-        
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        if (data.success) {
-          this.productTemplates = data.templates;
-          
-          // 如果存在模板，默认选择第一个
-          if (this.productTemplates.length > 0) {
-            this.selectedTemplateId = this.productTemplates[0].templateId;
-          } else {
-            this.selectedTemplateId = '';
-            this.finalPrompt = '';
-            this.finalPromptEn = '';
-          }
-        }
-      } catch (error) {
-        console.error('获取产品模板失败:', error);
-        this.$message.error('获取产品海报模板失败，请刷新页面重试');
-      }
-    },
-    
-    async generateFinalPrompt() {
-      if (!this.selectedTemplateId || !this.productInfo.name) {
+    // 生成方案相关方法
+    async generateProposals() {
+      if (!this.canGenerateProposals) {
+        this.$message.warning('请完善产品信息');
         return;
       }
       
+      this.isGeneratingProposals = true;
+      this.startProposalsSimulation();
+      this.proposals = []; // 清空现有方案
+      this.selectedProposal = null;
+      
       try {
-        const featuresText = this.productInfo.features ? 
-          this.productInfo.features.split('\n').join('、') : 
-          '产品特点';
+        // 准备产品信息
+        const productInfoForRequest = {
+          name: this.productInfo.name,
+          features: this.productInfo.features.split('\n'),
+          targetAudience: this.productInfo.targetAudience,
+          sceneDescription: this.productInfo.sceneDescription,
+          imageUrl: this.productInfo.image
+        };
         
-        const response = await fetch('/api/prompts/generate-final-prompt', {
+        // 请求生成方案
+        const response = await fetch('/api/prompts/generate-poster-proposals', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ productInfo: productInfoForRequest })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          this.proposals = result.proposals;
+          this.proposalsSessionId = result.sessionId;
+          this.stopProposalsSimulation(true);
+          this.$message.success('成功生成海报设计方案');
+        } else {
+          this.stopProposalsSimulation(false);
+          this.$message.error('生成方案失败: ' + result.message);
+        }
+      } catch (error) {
+        console.error('生成方案出错:', error);
+        this.stopProposalsSimulation(false);
+        this.$message.error('生成方案时发生错误，请重试');
+      }
+    },
+    
+    // 选择方案
+    selectProposal(proposal) {
+      this.selectedProposal = proposal;
+      this.finalPrompt = ''; // 清空之前的提示词
+    },
+    
+    // 获取背景简短描述
+    getBriefBackground(background) {
+      if (!background) return '';
+      return background.length > 20 ? background.substring(0, 20) + '...' : background;
+    },
+    
+    // 获取色调简短描述
+    getBriefColorTone(colorTone) {
+      if (!colorTone) return '';
+      return colorTone.length > 20 ? colorTone.substring(0, 20) + '...' : colorTone;
+    },
+    
+    // 基于选择的方案生成海报
+    async generatePosterFromProposal() {
+      if (!this.selectedProposal) {
+        this.$message.warning('请选择一个设计方案');
+        return;
+      }
+      
+      if (!this.productInfo.image) {
+        this.$message.warning('请上传产品图片');
+        return;
+      }
+      
+      this.isGenerating = true;
+      this.posterLoadError = false;
+      this.startProgressSimulation();
+      
+      try {
+        // 首先获取最终提示词
+        const promptResponse = await fetch('/api/prompts/generate-final-prompt-from-proposal', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            templateId: this.selectedTemplateId,
-            productName: this.productInfo.name,
-            features: featuresText
+            sessionId: this.proposalsSessionId,
+            proposalId: this.selectedProposal.proposalId,
+            productInfo: {
+              name: this.productInfo.name,
+              features: this.productInfo.features.split('\n'),
+              targetAudience: this.productInfo.targetAudience,
+              sceneDescription: this.productInfo.sceneDescription
+            }
           })
         });
         
-        const data = await response.json();
+        const promptResult = await promptResponse.json();
         
-        if (data.success) {
-          this.finalPrompt = data.finalPrompt;
-          this.finalPromptEn = data.finalPromptEn;
+        if (!promptResult.success) {
+          throw new Error('获取最终提示词失败: ' + promptResult.message);
+        }
+        
+        // 保存最终提示词
+        this.finalPrompt = promptResult.finalPrompt;
+        this.finalPromptEn = promptResult.finalPromptEn;
+        
+        // 构造生成海报的请求数据
+        const requestData = {
+          proposalId: this.selectedProposal.proposalId,
+          sessionId: this.proposalsSessionId,
+          productInfo: {
+            name: this.productInfo.name,
+            features: this.productInfo.features.split('\n'),
+            targetAudience: this.productInfo.targetAudience,
+            sceneDescription: this.productInfo.sceneDescription,
+            imageUrl: this.productInfo.image
+          }
+        };
+        
+        // 请求生成海报
+        const response = await fetch('/api/posters/generate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestData)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          this.generatedPoster = result.posterUrl + '?t=' + new Date().getTime(); // 添加时间戳防止缓存
+          this.isBackupPoster = result.useBackup;
+          
+          this.stopProgressSimulation(true);
+          this.$message.success(
+            this.isBackupPoster 
+              ? '海报生成失败，已使用原图作为海报' 
+              : '海报生成成功!'
+          );
         } else {
-          this.$message.error('生成提示词失败: ' + data.message);
+          this.stopProgressSimulation(false);
+          this.$message.error('海报生成失败: ' + result.message);
         }
       } catch (error) {
-        console.error('生成最终提示词失败:', error);
-        this.$message.error('生成提示词失败，请重试');
+        console.error('生成海报出错:', error);
+        this.stopProgressSimulation(false);
+        this.$message.error('生成海报时发生错误，请重试');
       }
     },
     
+    // 方案生成进度模拟
+    startProposalsSimulation() {
+      this.proposalsProgress = 0;
+      this.proposalsStatus = '';
+      this.proposalsMessage = '正在准备生成方案...';
+      
+      // 同时更新对话框进度
+      this.progressDialogVisible = true;
+      this.progressDialogTitle = '正在生成设计方案';
+      this.dialogProgress = 0;
+      this.dialogProgressStatus = '';
+      this.dialogProgressMessage = '正在准备生成方案...';
+      
+      // 清除可能存在的旧计时器
+      if (this.proposalsInterval) {
+        clearInterval(this.proposalsInterval);
+      }
+      
+      // 模拟生成进度
+      const progressSteps = [
+        { progress: 15, message: '分析产品信息...' },
+        { progress: 30, message: '生成设计概念...' },
+        { progress: 50, message: '创建多风格方案...' },
+        { progress: 70, message: '优化方案细节...' },
+        { progress: 85, message: '准备展示方案...' }
+      ];
+      
+      let currentStep = 0;
+      
+      this.proposalsInterval = setInterval(() => {
+        if (currentStep < progressSteps.length) {
+          const step = progressSteps[currentStep];
+          this.proposalsProgress = step.progress;
+          this.proposalsMessage = step.message;
+          // 同步更新对话框进度
+          this.dialogProgress = step.progress;
+          this.dialogProgressMessage = step.message;
+          currentStep++;
+        } else {
+          // 中间步骤保持在85%，等待实际完成
+          this.proposalsProgress = 85;
+          this.proposalsMessage = '即将完成，请稍候...';
+          // 同步更新对话框进度
+          this.dialogProgress = 85;
+          this.dialogProgressMessage = '即将完成，请稍候...';
+        }
+      }, 1500); // 每1.5秒更新一次进度
+    },
+    
+    stopProposalsSimulation(success = true) {
+      if (this.proposalsInterval) {
+        clearInterval(this.proposalsInterval);
+        this.proposalsInterval = null;
+      }
+      
+      // 设置最终状态
+      this.proposalsProgress = 100;
+      this.proposalsStatus = success ? 'success' : 'exception';
+      this.proposalsMessage = success ? '方案生成完成!' : '生成过程中出现错误';
+      
+      // 同步更新对话框进度
+      this.dialogProgress = 100;
+      this.dialogProgressStatus = success ? 'success' : 'exception';
+      this.dialogProgressMessage = success ? '方案生成完成!' : '生成过程中出现错误';
+      
+      // 短暂延迟后隐藏进度条和对话框
+      setTimeout(() => {
+        this.isGeneratingProposals = false;
+        this.progressDialogVisible = false;
+      }, 1000);
+    },
+    
+    // 添加显示优化后提示词的方法
+    showOptimizedPrompt() {
+      if (!this.finalPrompt) {
+        this.$message.warning('还没有生成最终提示词');
+        return;
+      }
+      
+      // 格式化提示词，每个部分加上换行，使其更易读
+      const formattedPrompt = this.formatPrompt(this.finalPrompt);
+      
+      this.dialogPromptTitle = '最终生成提示词';
+      this.dialogPromptContent = formattedPrompt;
+      this.promptDialogVisible = true;
+    },
+    
+    // 添加显示原始提示词的方法
+    showOriginalPrompt() {
+      if (!this.selectedProposal) {
+        this.$message.warning('还没有选择设计方案');
+        return;
+      }
+      
+      // 获取场景描述，如果有的话
+      const sceneDesc = this.productInfo.sceneDescription 
+        ? `\n\n产品使用场景：${this.productInfo.sceneDescription}。`
+        : '';
+      
+      // 根据选择的方案构建原始提示词
+      const originalPrompt = `一张"${this.productInfo.name}"商业海报。
+
+产品位于海报${this.selectedProposal.position}，保留图片原样，作为海报的主体。
+
+海报的背景是：${this.selectedProposal.background}。
+
+产品特点文字位于${this.selectedProposal.featurePosition}，写着"${this.productInfo.features.split('\n').join('、')}"。${sceneDesc}
+
+整体布局：${this.selectedProposal.layout}。
+
+背景描述：${this.selectedProposal.backgroundDesc}。
+
+光影要求：${this.selectedProposal.lightingRequirements}。
+
+文字要求：${this.selectedProposal.textRequirements}。
+
+色调要求：${this.selectedProposal.colorTone}。
+
+海报尺寸：${this.selectedProposal.posterSize}。
+
+海报整体风格：${this.selectedProposal.overallStyle}。
+
+左上角品牌 LOGO 写着："RS-LED"，右下角公司网址写着"www.rs-led.com"，左下角是很小的公司二维码。`;
+      
+      // 格式化提示词使其更易读
+      const formattedPrompt = this.formatPrompt(originalPrompt);
+      
+      this.dialogPromptTitle = '原始提示词';
+      this.dialogPromptContent = formattedPrompt;
+      this.promptDialogVisible = true;
+    },
+
+    // 格式化提示词使其更易读的辅助方法
+    formatPrompt(prompt) {
+      if (!prompt) return '';
+      
+      // 拆分提示词到行，并处理每行
+      return prompt.split('\n')
+        .map(line => {
+          // 对每个主要部分进行处理
+          if (line.includes('：') || line.includes(':')) {
+            const parts = line.split(/[：:]/);
+            if (parts.length >= 2) {
+              const label = parts[0].trim();
+              const content = parts.slice(1).join(':').trim();
+              // 加粗标签部分
+              return `${label}：\n  ${content}`;
+            }
+          }
+          return line;
+        })
+        .join('\n\n')
+        .replace(/\n\n\n+/g, '\n\n'); // 移除过多的空行
+    },
+
+    // 以下为保留的原有方法
     handleImageSuccess(response) {
       if (response.success) {
         this.productInfo.image = response.url;
@@ -346,7 +678,14 @@ export default {
     startProgressSimulation() {
       this.generationProgress = 0;
       this.generationStatus = '';
-      this.progressMessage = '正在准备生成...'
+      this.progressMessage = '正在准备生成...';
+      
+      // 同时更新对话框进度
+      this.progressDialogVisible = true;
+      this.progressDialogTitle = '正在生成海报';
+      this.dialogProgress = 0;
+      this.dialogProgressStatus = '';
+      this.dialogProgressMessage = '正在准备生成...';
       
       // 清除可能存在的旧计时器
       if (this.progressInterval) {
@@ -370,11 +709,17 @@ export default {
           const step = progressSteps[currentStep];
           this.generationProgress = step.progress;
           this.progressMessage = step.message;
+          // 同步更新对话框进度
+          this.dialogProgress = step.progress;
+          this.dialogProgressMessage = step.message;
           currentStep++;
         } else {
           // 保持在90%，等待实际完成
           this.generationProgress = 90;
           this.progressMessage = '即将完成，请稍候...';
+          // 同步更新对话框进度
+          this.dialogProgress = 90;
+          this.dialogProgressMessage = '即将完成，请稍候...';
         }
       }, 2000); // 每2秒更新一次进度
     },
@@ -390,116 +735,30 @@ export default {
       this.generationStatus = success ? 'success' : 'exception';
       this.progressMessage = success ? '海报生成完成!' : '生成过程中出现错误';
       
-      // 短暂延迟后隐藏进度条
+      // 同步更新对话框进度
+      this.dialogProgress = 100;
+      this.dialogProgressStatus = success ? 'success' : 'exception';
+      this.dialogProgressMessage = success ? '海报生成完成!' : '生成过程中出现错误';
+      
+      // 短暂延迟后隐藏进度条和对话框
       setTimeout(() => {
         this.isGenerating = false;
+        this.progressDialogVisible = false;
       }, 1000);
-    },
-    
-    async generatePoster() {
-      if (!this.canGenerate) {
-        this.$message.warning('请完善产品信息并选择提示词模板');
-        return;
-      }
-      
-      this.isGenerating = true;
-      this.posterLoadError = false;
-      this.startProgressSimulation();
-      
-      try {
-        // 构造请求数据
-        const requestData = {
-          prompt: this.finalPrompt,
-          productInfo: {
-            name: this.productInfo.name,
-            features: this.productInfo.features.split('\n'),
-            targetAudience: this.productInfo.targetAudience,
-            imageUrl: this.productInfo.image
-          },
-          templateId: this.selectedTemplateId
-        };
-        
-        // 请求生成海报
-        const response = await fetch('/api/posters/generate', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(requestData)
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-          this.generatedPoster = result.posterUrl + '?t=' + new Date().getTime(); // 添加时间戳防止缓存
-          this.isBackupPoster = result.useBackup;
-          this.stopProgressSimulation(true);
-          this.$message.success(
-            this.isBackupPoster 
-              ? '海报生成失败，已使用原图作为海报' 
-              : '海报生成成功!'
-          );
-          
-          // 提交模板评分提示
-          if (!this.isBackupPoster) {
-            setTimeout(() => {
-              this.$confirm('海报生成完成，您对这个结果满意吗？', '海报评分', {
-                confirmButtonText: '满意，评5星',
-                cancelButtonText: '一般',
-                type: 'info'
-              }).then(() => {
-                this.rateTemplate(10); // 满意评10分
-              }).catch(() => {
-                this.rateTemplate(7); // 一般评7分
-              });
-            }, 1500);
-          }
-        } else {
-          this.stopProgressSimulation(false);
-          this.$message.error('海报生成失败: ' + result.message);
-        }
-      } catch (error) {
-        console.error('生成海报出错:', error);
-        this.stopProgressSimulation(false);
-        this.$message.error('生成海报时发生错误，请重试');
-      }
-    },
-    
-    async rateTemplate(score) {
-      if (!this.selectedTemplateId) return;
-      
-      try {
-        const response = await fetch(`/api/prompts/product-template/${this.selectedTemplateId}/rate`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ score })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-          this.$message.success('感谢您的评分！');
-          // 更新本地模板评分
-          const template = this.productTemplates.find(t => t.templateId === this.selectedTemplateId);
-          if (template) {
-            template.score = data.template.score;
-          }
-        }
-      } catch (error) {
-        console.error('评分失败:', error);
-      }
     },
     
     resetForm() {
       this.productInfo = {
-        name: 'LED灯管',
+        name: 'LED灯带',
         features: '高亮度\n高光效\n高性价比',
         targetAudience: '工程项目',
+        sceneDescription: '',
         image: ''
       };
-      // 保持选中的模板不变
+      this.proposals = [];
+      this.selectedProposal = null;
+      this.finalPrompt = '';
+      this.generatedPoster = '';
     },
     
     downloadPoster() {
@@ -515,8 +774,8 @@ export default {
     },
     
     regeneratePoster() {
-      // 使用相同的产品信息重新生成
-      this.generatePoster();
+      // 使用相同的方案重新生成
+      this.generatePosterFromProposal();
     },
     
     handlePosterImageError() {
@@ -524,162 +783,148 @@ export default {
       this.posterLoadError = true;
       this.$message.error('海报图片加载失败，请重试');
     },
-    
-    // 获取模板列表
-    async fetchTemplates() {
-      try {
-        const response = await fetch('/api/prompts/product-templates');
-        const result = await response.json();
-        
-        if (result.success) {
-          this.templates = result.templates;
-          
-          // 如果有模板，默认选择第一个
-          if (this.templates.length > 0) {
-            this.selectedTemplate = this.templates[0];
-          }
-        } else {
-          this.$message.error('获取模板列表失败: ' + (result.message || '未知错误'));
-        }
-      } catch (error) {
-        console.error('获取模板列表出错:', error);
-        this.$message.error('获取模板列表失败，请检查网络连接');
-      }
+
+    showProposalDetails(proposal) {
+      this.currentProposalDetails = proposal;
+      this.proposalDialogVisible = true;
     },
-    
-    // 选择模板
-    selectTemplate(template) {
-      this.selectedTemplate = template;
-      this.selectedTemplateId = template.templateId;
-      
-      // 根据模板生成提示词
-      if (template) {
-        this.generateFinalPrompt();
-      }
-    },
-    
-    // 从模板生成提示词
-    generatePromptFromTemplate(template) {
-      return `一张${this.productName || '产品名称'}商业海报。
 
-产品位于海报${template.position}，前景描述：${template.foreground}，和海报背景无缝组成完整海报。
-
-海报的背景是：${template.background}。
-
-产品特点文字位于${template.featurePosition}，写着"${this.productFeatures || '产品特点'}"。
-
-整体布局：${template.layout || '产品居中，背景环绕，文字简洁'}。
-
-背景描述：${template.backgroundDesc || '材质+光线+质感'}。
-
-光影要求：${template.lightingRequirements || '从产品投射柔和光线'}。
-
-文字要求：${template.textRequirements || '中等大小，清晰易读'}。
-
-色调要求：${template.colorTone || '根据产品特点选择和谐色调'}。
-
-海报尺寸：${template.posterSize}。
-
-海报整体风格：${template.overallStyle || template.styleType}。
-
-左上角品牌 LOGO 写着："RS-LED"，右下角公司网址写着"www.rs-led.com"，左下角是很小的公司二维码。`;
-    },
-    
-    // 提交生成
-    async submitGeneration() {
-      if (!this.prompt || !this.prompt.trim()) {
-        this.$message.error('请输入提示词');
-        return;
-      }
-
-      this.isGenerating = true;
-      this.generationError = false;
-      this.posterUrl = '';
-      this.generatedPosterId = '';
-      this.generationStatus = '准备中...';
-      this.progressMessage = '正在准备生成请求...';
-
-      // 启动进度更新
-      this.startProgressUpdate();
-
-      // 准备表单数据
-      const formData = new FormData();
-      formData.append('prompt', this.prompt);
-      formData.append('productName', this.productInfo.name || '');
-      formData.append('productFeatures', this.productInfo.features || '');
-      
-      // 添加选定的模板ID
-      if (this.selectedTemplate) {
-        formData.append('templateId', this.selectedTemplate.templateId);
-      }
-      
-      // 如果有选择图片，添加到表单
-      if (this.productInfo.image) {
-        formData.append('image', this.productInfo.image);
-      }
-
-      try {
-        this.generationStatus = '生成中...';
-        this.progressMessage = '正在发送请求到AI服务...';
-        
-        const response = await fetch('/api/posters/generate', {
-          method: 'POST',
-          body: formData
-        });
-
-        if (!response.ok) {
-          throw new Error(`服务器返回错误: ${response.status}`);
-        }
-
-        const result = await response.json();
-
-        if (result.success) {
-          this.generationStatus = '完成';
-          this.progressMessage = '海报生成完成！';
-          this.posterUrl = result.posterUrl;
-          this.generatedPosterId = result.posterId;
-          
-          // 如果有选择模板，则更新模板使用次数和评分
-          if (this.selectedTemplate) {
-            try {
-              await fetch(`/api/prompts/product-template/${this.selectedTemplate.templateId}/rate`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ score: 5 }) // 默认评分为5
-              });
-            } catch (error) {
-              console.error('更新模板评分失败:', error);
-            }
-          }
-          
-          // 滚动到结果区域
-          this.$nextTick(() => {
-            const resultSection = this.$el.querySelector('.result-section');
-            if (resultSection) {
-              resultSection.scrollIntoView({ behavior: 'smooth' });
-            }
-          });
-        } else {
-          throw new Error(result.message || '生成失败');
-        }
-      } catch (error) {
-        console.error('生成海报失败:', error);
-        this.generationError = true;
-        this.generationStatus = '失败';
-        this.progressMessage = `生成失败: ${error.message}`;
-        this.$message.error(`生成失败: ${error.message}`);
-      } finally {
-        this.isGenerating = false;
-        this.stopProgressUpdate();
+    selectProposalFromDialog() {
+      if (this.currentProposalDetails) {
+        this.selectedProposal = this.currentProposalDetails;
+        this.finalPrompt = ''; // 清空之前的提示词
+        this.proposalDialogVisible = false;
+        // 添加选择成功的提示
+        this.$message.success(`已选择"${this.currentProposalDetails.styleName}"方案`);
+        // 直接开始生成海报
+        this.generatePosterFromProposal();
       }
     },
   }
 }
 </script>
 
-<style scoped>
+<style>
+/* 添加方案选择相关样式 */
+.quick-product-select {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+}
+
+.proposals-container {
+  margin-bottom: 1.5rem;
+}
+
+.proposals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.proposal-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background-color: #f8fafc;
+}
+
+.proposal-card:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.1);
+}
+
+.proposal-card.selected {
+  border-color: #3b82f6;
+  background-color: #ebf4ff;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+}
+
+.proposal-header {
+  margin-bottom: 0.5rem;
+}
+
+.proposal-title {
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: #1a56db;
+}
+
+.proposal-description {
+  color: #4a5568;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.proposal-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.proposal-detail {
+  color: #4a5568;
+}
+
+.proposal-actions {
+  margin-top: 1rem;
+  display: flex;
+  justify-content: center;
+}
+
+.proposal-details-full {
+  background-color: #f8fafc;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid #e2e8f0;
+}
+
+.proposal-detail-item {
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  color: #4a5568;
+}
+
+.proposal-section {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #2d3748;
+  margin-bottom: 0.75rem;
+}
+
+.empty-proposals {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+}
+
+/* 进度对话框样式 */
+.progress-dialog-content {
+  padding: 16px;
+  text-align: center;
+}
+
+.progress-dialog-text {
+  margin-top: 12px;
+  font-size: 0.95rem;
+  color: #4b5563;
+}
+
+/* 保留和修改原有样式 */
 .create-poster {
   max-width: 1400px;
   margin: 0 auto;
@@ -788,107 +1033,6 @@ export default {
   text-align: center;
 }
 
-/* 模板选择区域样式优化 */
-.template-selection-section h4 {
-  margin-bottom: 0.75rem;
-  font-size: 1rem;
-  color: #4a5568;
-}
-
-.template-carousel {
-  width: 100%;
-  overflow-x: auto;
-  padding: 0.5rem 0;
-}
-
-.template-cards {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 0.75rem;
-}
-
-/* 添加紧凑型模板卡片样式 */
-.template-card-compact {
-  min-width: 150px;
-  max-width: 180px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  border: 2px solid transparent;
-  padding: 0.5rem;
-  background-color: #f7fafc;
-  border-radius: 6px;
-  margin-bottom: 0.5rem;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  position: relative;
-}
-
-.template-card-compact:before {
-  content: "点击选择";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(26, 86, 219, 0.1);
-  color: #1a56db;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: bold;
-  opacity: 0;
-  transition: opacity 0.3s;
-  border-radius: 4px;
-}
-
-.template-card-compact:hover:before {
-  opacity: 1;
-}
-
-.template-card-compact.selected:before {
-  content: "已选择";
-  background-color: rgba(26, 86, 219, 0.15);
-  opacity: 1;
-}
-
-.template-card-compact .template-header {
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 0.3rem;
-}
-
-.template-card-compact .template-title {
-  font-weight: 600;
-  font-size: 0.85rem;
-  margin-bottom: 0.2rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.template-card-compact .template-footer {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.7rem;
-  margin-top: 0.3rem;
-}
-
-.template-card-compact .template-scene {
-  padding: 1px 4px;
-  border-radius: 8px;
-  font-size: 0.7rem;
-  background-color: #e5e7eb;
-  color: #4b5563;
-}
-
-.template-card-compact .template-size {
-  padding: 1px 4px;
-  border-radius: 8px;
-  font-size: 0.7rem;
-  background-color: #dbeafe;
-  color: #1e40af;
-}
-
-/* 提示词预览区域优化 */
 .prompt-preview {
   margin-top: 1rem;
 }
@@ -897,11 +1041,6 @@ export default {
   margin-bottom: 0.5rem;
   color: #444;
   font-size: 1rem;
-}
-
-/* 减少提示词文本区域高度 */
-.prompt-preview .el-textarea textarea {
-  max-height: 120px;
 }
 
 .generate-btn {
@@ -922,7 +1061,6 @@ export default {
   text-align: center;
 }
 
-/* 海报结果区域优化 */
 .empty-result {
   display: flex;
   justify-content: center;
@@ -935,13 +1073,13 @@ export default {
   flex-direction: column;
   align-items: center;
   height: 100%;
-  min-height: 600px;
+  min-height: 300px;
   width: 100%;
 }
 
 .poster-image {
   max-width: 100%;
-  min-height: 400px;
+  min-height: 300px;
   max-height: 600px;
   width: auto;
   object-fit: contain;
@@ -967,13 +1105,28 @@ export default {
   margin-bottom: 0.5rem;
 }
 
-.template-card-compact:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
+.prompt-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
-.template-card-compact.selected {
-  border-color: #1a56db;
-  background-color: #ebf4ff;
+.prompt-dialog-content {
+  padding: 16px;
+}
+
+.prompt-dialog-text {
+  white-space: pre-wrap;
+  font-family: 'Courier New', monospace;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 16px;
+  line-height: 1.6;
+  background-color: #f9fafb;
+  border-radius: 4px;
+  text-align: left;
+  font-size: 0.9rem;
+  color: #374151;
 }
 </style> 

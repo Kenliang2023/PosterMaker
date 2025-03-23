@@ -1,278 +1,220 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const db = require('../db');
 
 // 配置文件上传
-const storage = multer.memoryStorage();
-const upload = multer({
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, '../../../uploads/images');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, 'product-' + uniqueSuffix + ext);
+  }
+});
+
+const upload = multer({ 
   storage: storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 限制10MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 限制10MB
+  fileFilter: (req, file, cb) => {
+    // 只接受图片文件
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('只允许上传图片文件'), false);
+    }
   }
 });
 
 // 上传产品图片
-router.post('/upload-image', upload.single('image'), async (req, res) => {
+router.post('/upload-image', upload.single('product_image'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: '未上传图片文件'
-      });
+      return res.status(400).json({ error: '没有上传文件' });
     }
 
-    const { username } = req.body;
-    if (!username) {
-      return res.status(400).json({
-        success: false,
-        message: '缺少用户信息'
-      });
-    }
-
-    // 生成唯一图片ID
-    const imageId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
-    
-    // 存储图片数据
-    const imageKey = `image:${username}:${imageId}`;
-    await db.images.put(imageKey, req.file.buffer);
-
-    // 存储图片元数据
-    const metadataKey = `metadata:${username}:${imageId}`;
-    const metadata = {
-      username,
-      imageId,
-      originalname: req.file.originalname,
-      mimetype: req.file.mimetype,
+    // 保存图片信息到数据库
+    const imageInfo = {
+      originalName: req.file.originalname,
+      filename: req.file.filename,
+      path: req.file.path,
       size: req.file.size,
+      mimetype: req.file.mimetype,
       uploadedAt: new Date().toISOString()
     };
-    
-    await db.images.put(metadataKey, JSON.stringify(metadata));
+
+    const imageId = `image_${Date.now()}`;
+    await db.images.put(imageId, imageInfo);
 
     res.json({
       success: true,
-      image: {
-        imageId,
-        ...metadata
-      }
+      imageId: imageId,
+      filename: req.file.filename,
+      url: `/uploads/images/${req.file.filename}`
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '上传图片失败',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    console.error('上传图片失败:', error);
+    res.status(500).json({ error: '上传图片失败' });
   }
 });
 
-// 获取图片
-router.get('/image/:username/:imageId', async (req, res) => {
+// 生成海报
+router.post('/generate', async (req, res) => {
   try {
-    const { username, imageId } = req.params;
-    
-    // 获取图片元数据
+    const { imageId, productName, features, promptId } = req.body;
+
+    if (!imageId || !productName) {
+      return res.status(400).json({ error: '缺少必要参数' });
+    }
+
+    // 获取图片信息
+    let imageInfo;
     try {
-      const metadataKey = `metadata:${username}:${imageId}`;
-      const metadataStr = await db.images.get(metadataKey);
-      const metadata = JSON.parse(metadataStr);
-      
-      // 获取图片数据
-      const imageKey = `image:${username}:${imageId}`;
-      const imageBuffer = await db.images.get(imageKey);
-      
-      // 设置响应头
-      res.set('Content-Type', metadata.mimetype);
-      res.set('Content-Length', imageBuffer.length);
-      
-      // 发送图片数据
-      res.send(imageBuffer);
+      imageInfo = await db.images.get(imageId);
     } catch (error) {
-      if (error.notFound) {
-        res.status(404).json({
-          success: false,
-          message: '图片不存在'
-        });
+      return res.status(404).json({ error: '图片不存在' });
+    }
+
+    // 获取提示词模板
+    let promptTemplate;
+    try {
+      if (promptId) {
+        promptTemplate = await db.prompts.get(promptId);
       } else {
-        throw error;
+        // 获取默认提示词模板
+        // 这里简化处理，实际应用需要查询默认模板
+        promptTemplate = { template: "创建一个展示{productName}的市场营销海报。突出以下特点：{features}" };
       }
-    }
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '获取图片失败',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-// 获取用户的所有图片列表
-router.get('/images/:username', async (req, res) => {
-  try {
-    const { username } = req.params;
-    const images = [];
-    
-    // 创建读取流
-    const stream = db.images.createReadStream({
-      gt: `metadata:${username}:`,
-      lt: `metadata:${username}:\xFF`
-    });
-    
-    // 处理数据
-    await new Promise((resolve, reject) => {
-      stream.on('data', (data) => {
-        if (data.key.startsWith(`metadata:${username}:`)) {
-          images.push(JSON.parse(data.value.toString()));
-        }
-      });
-      
-      stream.on('error', reject);
-      stream.on('end', resolve);
-    });
-    
-    res.json({
-      success: true,
-      images
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '获取图片列表失败',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-// 存储生成的海报
-router.post('/save-poster', upload.single('poster'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: '未上传海报图片'
-      });
+    } catch (error) {
+      return res.status(500).json({ error: '获取提示词模板失败' });
     }
 
-    const { username, sourceImageId, promptId } = req.body;
-    if (!username) {
-      return res.status(400).json({
-        success: false,
-        message: '缺少用户信息'
-      });
-    }
+    // 构建完整提示词
+    const fullPrompt = promptTemplate.template
+      .replace('{productName}', productName)
+      .replace('{features}', features || '');
 
-    // 生成唯一海报ID
-    const posterId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
-    
-    // 存储海报图片数据
-    const posterKey = `poster:${username}:${posterId}`;
-    await db.posters.put(posterKey, req.file.buffer);
-
-    // 存储海报元数据
-    const metadataKey = `metadata:${username}:${posterId}`;
-    const metadata = {
-      username,
-      posterId,
-      sourceImageId,
-      promptId,
-      originalname: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size,
+    // TODO: 调用Gemini API生成海报
+    // 这里是模拟，实际项目中需要对接Gemini API
+    const posterResult = {
+      id: `poster_${Date.now()}`,
+      imageUrl: `/uploads/posters/sample-poster.jpg`, // 模拟的海报URL
+      prompt: fullPrompt,
+      productName,
+      features,
+      sourceImageId: imageId,
       createdAt: new Date().toISOString()
     };
-    
-    await db.posters.put(metadataKey, JSON.stringify(metadata));
+
+    // 保存海报信息
+    await db.posters.put(posterResult.id, posterResult);
+
+    // 记录使用统计
+    const analyticsId = `analytics_${Date.now()}`;
+    await db.analytics.put(analyticsId, {
+      type: 'poster_generation',
+      posterId: posterResult.id,
+      timestamp: new Date().toISOString()
+    });
 
     res.json({
       success: true,
-      poster: {
-        posterId,
-        ...metadata
-      }
+      poster: posterResult
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '保存海报失败',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    console.error('生成海报失败:', error);
+    res.status(500).json({ error: '生成海报失败' });
   }
 });
 
-// 获取海报
-router.get('/poster/:username/:posterId', async (req, res) => {
+// 获取所有海报
+router.get('/', async (req, res) => {
   try {
-    const { username, posterId } = req.params;
-    
-    // 获取海报元数据
-    try {
-      const metadataKey = `metadata:${username}:${posterId}`;
-      const metadataStr = await db.posters.get(metadataKey);
-      const metadata = JSON.parse(metadataStr);
-      
-      // 获取海报数据
-      const posterKey = `poster:${username}:${posterId}`;
-      const posterBuffer = await db.posters.get(posterKey);
-      
-      // 设置响应头
-      res.set('Content-Type', metadata.mimetype);
-      res.set('Content-Length', posterBuffer.length);
-      
-      // 发送海报数据
-      res.send(posterBuffer);
-    } catch (error) {
-      if (error.notFound) {
-        res.status(404).json({
-          success: false,
-          message: '海报不存在'
-        });
-      } else {
-        throw error;
-      }
-    }
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '获取海报失败',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-// 获取用户的所有海报列表
-router.get('/posters/:username', async (req, res) => {
-  try {
-    const { username } = req.params;
     const posters = [];
     
-    // 创建读取流
-    const stream = db.posters.createReadStream({
-      gt: `metadata:${username}:`,
-      lt: `metadata:${username}:\xFF`
-    });
-    
-    // 处理数据
+    // 从数据库获取所有海报
     await new Promise((resolve, reject) => {
-      stream.on('data', (data) => {
-        if (data.key.startsWith(`metadata:${username}:`)) {
-          posters.push(JSON.parse(data.value.toString()));
-        }
-      });
-      
-      stream.on('error', reject);
-      stream.on('end', resolve);
+      db.posters.createReadStream()
+        .on('data', (data) => {
+          posters.push(data.value);
+        })
+        .on('error', (err) => {
+          reject(err);
+        })
+        .on('end', () => {
+          resolve();
+        });
     });
-    
+
+    // 按创建时间排序，最新的在前
+    posters.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
     res.json({
       success: true,
-      posters
+      posters: posters
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '获取海报列表失败',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    console.error('获取海报列表失败:', error);
+    res.status(500).json({ error: '获取海报列表失败' });
+  }
+});
+
+// 获取单个海报详情
+router.get('/:id', async (req, res) => {
+  try {
+    const posterId = req.params.id;
+    
+    try {
+      const poster = await db.posters.get(posterId);
+      res.json({
+        success: true,
+        poster: poster
+      });
+    } catch (error) {
+      if (error.notFound) {
+        return res.status(404).json({ error: '海报不存在' });
+      }
+      throw error;
+    }
+  } catch (error) {
+    console.error('获取海报详情失败:', error);
+    res.status(500).json({ error: '获取海报详情失败' });
+  }
+});
+
+// 删除海报
+router.delete('/:id', async (req, res) => {
+  try {
+    const posterId = req.params.id;
+    
+    try {
+      // 检查海报是否存在
+      await db.posters.get(posterId);
+      
+      // 删除海报
+      await db.posters.del(posterId);
+      
+      res.json({
+        success: true,
+        message: '海报已成功删除'
+      });
+    } catch (error) {
+      if (error.notFound) {
+        return res.status(404).json({ error: '海报不存在' });
+      }
+      throw error;
+    }
+  } catch (error) {
+    console.error('删除海报失败:', error);
+    res.status(500).json({ error: '删除海报失败' });
   }
 });
 

@@ -1,44 +1,29 @@
-const levelup = require('levelup');
-const leveldown = require('leveldown');
-const sublevel = require('level-sublevel');
+const level = require('level');
 const path = require('path');
-require('dotenv').config();
+const fs = require('fs');
 
-// 数据库路径
-const dbPath = path.resolve(process.env.DB_PATH || './data');
-
-// 创建并配置数据库
-function createDatabase() {
-  try {
-    // 创建基础数据库
-    const db = levelup(leveldown(dbPath));
-    
-    // 使用sublevel创建命名空间
-    const subDb = sublevel(db);
-    
-    // 创建各个子数据库
-    const users = subDb.sublevel('users');
-    const images = subDb.sublevel('images');
-    const posters = subDb.sublevel('posters');
-    const prompts = subDb.sublevel('prompts');
-    const analytics = subDb.sublevel('analytics');
-    
-    console.log('数据库连接成功');
-    
-    return {
-      db,
-      users,
-      images,
-      posters, 
-      prompts,
-      analytics
-    };
-  } catch (error) {
-    console.error('数据库连接失败:', error);
-    process.exit(1);
-  }
+// 确保数据库目录存在
+const dbPath = path.join(__dirname, '../../../data');
+if (!fs.existsSync(dbPath)) {
+  fs.mkdirSync(dbPath, { recursive: true });
 }
 
-// 导出数据库实例
-const database = createDatabase();
-module.exports = database; 
+// 创建数据库子目录
+const createSubDB = (name) => {
+  const subPath = path.join(dbPath, name);
+  if (!fs.existsSync(subPath)) {
+    fs.mkdirSync(subPath, { recursive: true });
+  }
+  return level(subPath, { valueEncoding: 'json' });
+};
+
+// 初始化数据库
+const db = {
+  posters: createSubDB('posters'),    // 存储生成的海报信息
+  images: createSubDB('images'),      // 存储用户上传的图片信息
+  prompts: createSubDB('prompts'),    // 存储系统预设和自定义提示词
+  users: createSubDB('users'),        // 存储用户信息
+  analytics: createSubDB('analytics') // 存储使用统计和分析数据
+};
+
+module.exports = db; 

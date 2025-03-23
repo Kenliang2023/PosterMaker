@@ -1,25 +1,21 @@
 const express = require('express');
 const router = express.Router();
 
-// 导入各个路由模块
-const userRoutes = require('./user');
+// 导入所有路由模块
 const posterRoutes = require('./poster');
-const adminRoutes = require('./admin');
 const promptRoutes = require('./prompt');
+const userRoutes = require('./user');
+const adminRoutes = require('./admin');
 
-// 设置API路由
-router.use('/user', userRoutes);
-router.use('/poster', posterRoutes);
+// 注册路由
+router.use('/posters', posterRoutes);
+router.use('/prompts', promptRoutes);
+router.use('/users', userRoutes);
 router.use('/admin', adminRoutes);
-router.use('/prompt', promptRoutes);
 
 // API状态检查
 router.get('/status', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV
-  });
+  res.json({ status: 'ok', message: 'API服务正常运行' });
 });
 
 module.exports = router; 

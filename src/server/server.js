@@ -3,6 +3,8 @@ const path = require('path');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const multer = require('multer');
+const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
 require('dotenv').config();
 
 // 初始化数据库连接
@@ -10,7 +12,7 @@ require('./db');
 
 // 创建Express应用
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // 中间件配置
 app.use(cors());
@@ -30,6 +32,27 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
+
+// 配置静态文件目录
+app.use('/public', express.static(path.join(__dirname, '../../public')));
+
+// 确保uploads目录存在
+const uploadsDir = path.join(__dirname, '../../uploads');
+const imagesDir = path.join(uploadsDir, 'images');
+const postersDir = path.join(__dirname, '../../public/uploads/posters');
+
+// 创建目录函数
+const ensureDir = (dirPath) => {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+    console.log(`创建目录: ${dirPath}`);
+  }
+};
+
+// 确保必要的目录存在
+ensureDir(uploadsDir);
+ensureDir(imagesDir);
+ensureDir(postersDir);
 
 // API路由
 const apiRoutes = require('./routes');

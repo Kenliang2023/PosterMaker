@@ -63,24 +63,47 @@
       
       <!-- 第二栏：提示词模板 -->
       <div class="prompt-section">
-        <h3>提示词模板</h3>
+        <h3>提示词设置</h3>
         
-        <div class="prompt-container">
-          <div class="prompt-select">
-            <el-select v-model="selectedPromptId" placeholder="选择提示词模板" style="width: 100%">
-              <el-option
-                v-for="prompt in prompts"
-                :key="prompt.id"
-                :label="prompt.name"
-                :value="prompt.id"
-              ></el-option>
-            </el-select>
+        <!-- 模板选择部分 -->
+        <div class="template-selection-section">
+          <h4>选择模板</h4>
+          <div class="template-carousel">
+            <div class="template-cards">
+              <div 
+                v-for="template in templates" 
+                :key="template.templateId"
+                :class="['template-card-compact', selectedTemplate && selectedTemplate.templateId === template.templateId ? 'selected' : '']"
+                @click="selectTemplate(template)"
+              >
+                <div class="template-header">
+                  <span class="template-title">{{ template.productType }} - {{ template.styleType }}</span>
+                  <el-rate 
+                    v-model="template.score"
+                    disabled
+                    text-color="#ff9900"
+                    show-score
+                    :size="'small'"
+                  ></el-rate>
+                </div>
+                <div class="template-footer">
+                  <span class="template-scene">{{ template.applicationScene }}</span>
+                  <span class="template-size">{{ template.posterSize }}</span>
+                </div>
+              </div>
+            </div>
           </div>
-          
-          <div class="prompt-preview" v-if="selectedPrompt">
-            <h4>提示词预览</h4>
-            <div class="prompt-content">{{ renderedPrompt }}</div>
-          </div>
+        </div>
+        
+        <div class="prompt-preview">
+          <h4>海报生成提示词预览</h4>
+          <el-input
+            type="textarea"
+            :rows="5"
+            placeholder="选择模板后将显示生成的提示词"
+            v-model="finalPrompt"
+            readonly
+          ></el-input>
         </div>
         
         <!-- 生成进度区域 -->
@@ -137,6 +160,13 @@ export default {
       },
       prompts: [],
       selectedPromptId: '',
+      productType: 'LED灯带',
+      applicationScene: '商业空间',
+      styleType: '科技未来',
+      productTemplates: [],
+      selectedTemplateId: '',
+      finalPrompt: '',
+      finalPromptEn: '',
       generatedPoster: '',
       isGenerating: false,
       isBackupPoster: false,
@@ -144,7 +174,9 @@ export default {
       generationProgress: 0,
       generationStatus: '',
       progressMessage: '',
-      progressInterval: null
+      progressInterval: null,
+      templates: [],
+      selectedTemplate: null
     }
   },
   computed: {
@@ -165,16 +197,30 @@ export default {
       
       return template;
     },
+    selectedTemplate() {
+      return this.productTemplates.find(t => t.templateId === this.selectedTemplateId);
+    },
     canGenerate() {
       const result = this.productInfo.name && 
              this.productInfo.features && 
              this.productInfo.image &&
-             this.selectedPromptId;
+             this.selectedTemplateId;
       return result;
+    }
+  },
+  watch: {
+    selectedTemplateId: {
+      handler(newVal) {
+        if (newVal) {
+          this.generateFinalPrompt();
+        }
+      }
     }
   },
   mounted() {
     this.fetchPrompts();
+    this.fetchProductTemplates();
+    this.fetchTemplates();
   },
   methods: {
     async fetchPrompts() {
@@ -192,6 +238,84 @@ export default {
       } catch (error) {
         console.error('获取提示词失败:', error);
         this.$message.error('获取提示词模板失败，请刷新页面重试');
+      }
+    },
+    
+    async fetchProductTemplates() {
+      try {
+        let url = '/api/prompts/product-templates';
+        const queryParams = [];
+        
+        if (this.productType) {
+          queryParams.push(`productType=${encodeURIComponent(this.productType)}`);
+        }
+        
+        if (this.applicationScene) {
+          queryParams.push(`applicationScene=${encodeURIComponent(this.applicationScene)}`);
+        }
+        
+        if (this.styleType) {
+          queryParams.push(`styleType=${encodeURIComponent(this.styleType)}`);
+        }
+        
+        if (queryParams.length > 0) {
+          url += '?' + queryParams.join('&');
+        }
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.success) {
+          this.productTemplates = data.templates;
+          
+          // 如果存在模板，默认选择第一个
+          if (this.productTemplates.length > 0) {
+            this.selectedTemplateId = this.productTemplates[0].templateId;
+          } else {
+            this.selectedTemplateId = '';
+            this.finalPrompt = '';
+            this.finalPromptEn = '';
+          }
+        }
+      } catch (error) {
+        console.error('获取产品模板失败:', error);
+        this.$message.error('获取产品海报模板失败，请刷新页面重试');
+      }
+    },
+    
+    async generateFinalPrompt() {
+      if (!this.selectedTemplateId || !this.productInfo.name) {
+        return;
+      }
+      
+      try {
+        const featuresText = this.productInfo.features ? 
+          this.productInfo.features.split('\n').join('、') : 
+          '产品特点';
+        
+        const response = await fetch('/api/prompts/generate-final-prompt', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            templateId: this.selectedTemplateId,
+            productName: this.productInfo.name,
+            features: featuresText
+          })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          this.finalPrompt = data.finalPrompt;
+          this.finalPromptEn = data.finalPromptEn;
+        } else {
+          this.$message.error('生成提示词失败: ' + data.message);
+        }
+      } catch (error) {
+        console.error('生成最终提示词失败:', error);
+        this.$message.error('生成提示词失败，请重试');
       }
     },
     
@@ -285,14 +409,14 @@ export default {
       try {
         // 构造请求数据
         const requestData = {
-          prompt: this.renderedPrompt,
+          prompt: this.finalPrompt,
           productInfo: {
             name: this.productInfo.name,
             features: this.productInfo.features.split('\n'),
             targetAudience: this.productInfo.targetAudience,
             imageUrl: this.productInfo.image
           },
-          templateId: this.selectedPromptId
+          templateId: this.selectedTemplateId
         };
         
         // 请求生成海报
@@ -315,6 +439,21 @@ export default {
               ? '海报生成失败，已使用原图作为海报' 
               : '海报生成成功!'
           );
+          
+          // 提交模板评分提示
+          if (!this.isBackupPoster) {
+            setTimeout(() => {
+              this.$confirm('海报生成完成，您对这个结果满意吗？', '海报评分', {
+                confirmButtonText: '满意，评5星',
+                cancelButtonText: '一般',
+                type: 'info'
+              }).then(() => {
+                this.rateTemplate(10); // 满意评10分
+              }).catch(() => {
+                this.rateTemplate(7); // 一般评7分
+              });
+            }, 1500);
+          }
         } else {
           this.stopProgressSimulation(false);
           this.$message.error('海报生成失败: ' + result.message);
@@ -323,6 +462,33 @@ export default {
         console.error('生成海报出错:', error);
         this.stopProgressSimulation(false);
         this.$message.error('生成海报时发生错误，请重试');
+      }
+    },
+    
+    async rateTemplate(score) {
+      if (!this.selectedTemplateId) return;
+      
+      try {
+        const response = await fetch(`/api/prompts/product-template/${this.selectedTemplateId}/rate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ score })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          this.$message.success('感谢您的评分！');
+          // 更新本地模板评分
+          const template = this.productTemplates.find(t => t.templateId === this.selectedTemplateId);
+          if (template) {
+            template.score = data.template.score;
+          }
+        }
+      } catch (error) {
+        console.error('评分失败:', error);
       }
     },
     
@@ -357,7 +523,158 @@ export default {
       console.error('海报图片加载失败:', this.generatedPoster);
       this.posterLoadError = true;
       this.$message.error('海报图片加载失败，请重试');
-    }
+    },
+    
+    // 获取模板列表
+    async fetchTemplates() {
+      try {
+        const response = await fetch('/api/prompts/product-templates');
+        const result = await response.json();
+        
+        if (result.success) {
+          this.templates = result.templates;
+          
+          // 如果有模板，默认选择第一个
+          if (this.templates.length > 0) {
+            this.selectedTemplate = this.templates[0];
+          }
+        } else {
+          this.$message.error('获取模板列表失败: ' + (result.message || '未知错误'));
+        }
+      } catch (error) {
+        console.error('获取模板列表出错:', error);
+        this.$message.error('获取模板列表失败，请检查网络连接');
+      }
+    },
+    
+    // 选择模板
+    selectTemplate(template) {
+      this.selectedTemplate = template;
+      this.selectedTemplateId = template.templateId;
+      
+      // 根据模板生成提示词
+      if (template) {
+        this.generateFinalPrompt();
+      }
+    },
+    
+    // 从模板生成提示词
+    generatePromptFromTemplate(template) {
+      return `一张${this.productName || '产品名称'}商业海报。
+
+产品位于海报${template.position}，前景描述：${template.foreground}，和海报背景无缝组成完整海报。
+
+海报的背景是：${template.background}。
+
+产品特点文字位于${template.featurePosition}，写着"${this.productFeatures || '产品特点'}"。
+
+整体布局：${template.layout || '产品居中，背景环绕，文字简洁'}。
+
+背景描述：${template.backgroundDesc || '材质+光线+质感'}。
+
+光影要求：${template.lightingRequirements || '从产品投射柔和光线'}。
+
+文字要求：${template.textRequirements || '中等大小，清晰易读'}。
+
+色调要求：${template.colorTone || '根据产品特点选择和谐色调'}。
+
+海报尺寸：${template.posterSize}。
+
+海报整体风格：${template.overallStyle || template.styleType}。
+
+左上角品牌 LOGO 写着："RS-LED"，右下角公司网址写着"www.rs-led.com"，左下角是很小的公司二维码。`;
+    },
+    
+    // 提交生成
+    async submitGeneration() {
+      if (!this.prompt || !this.prompt.trim()) {
+        this.$message.error('请输入提示词');
+        return;
+      }
+
+      this.isGenerating = true;
+      this.generationError = false;
+      this.posterUrl = '';
+      this.generatedPosterId = '';
+      this.generationStatus = '准备中...';
+      this.progressMessage = '正在准备生成请求...';
+
+      // 启动进度更新
+      this.startProgressUpdate();
+
+      // 准备表单数据
+      const formData = new FormData();
+      formData.append('prompt', this.prompt);
+      formData.append('productName', this.productInfo.name || '');
+      formData.append('productFeatures', this.productInfo.features || '');
+      
+      // 添加选定的模板ID
+      if (this.selectedTemplate) {
+        formData.append('templateId', this.selectedTemplate.templateId);
+      }
+      
+      // 如果有选择图片，添加到表单
+      if (this.productInfo.image) {
+        formData.append('image', this.productInfo.image);
+      }
+
+      try {
+        this.generationStatus = '生成中...';
+        this.progressMessage = '正在发送请求到AI服务...';
+        
+        const response = await fetch('/api/posters/generate', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          throw new Error(`服务器返回错误: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (result.success) {
+          this.generationStatus = '完成';
+          this.progressMessage = '海报生成完成！';
+          this.posterUrl = result.posterUrl;
+          this.generatedPosterId = result.posterId;
+          
+          // 如果有选择模板，则更新模板使用次数和评分
+          if (this.selectedTemplate) {
+            try {
+              await fetch(`/api/prompts/product-template/${this.selectedTemplate.templateId}/rate`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ score: 5 }) // 默认评分为5
+              });
+            } catch (error) {
+              console.error('更新模板评分失败:', error);
+            }
+          }
+          
+          // 滚动到结果区域
+          this.$nextTick(() => {
+            const resultSection = this.$el.querySelector('.result-section');
+            if (resultSection) {
+              resultSection.scrollIntoView({ behavior: 'smooth' });
+            }
+          });
+        } else {
+          throw new Error(result.message || '生成失败');
+        }
+      } catch (error) {
+        console.error('生成海报失败:', error);
+        this.generationError = true;
+        this.generationStatus = '失败';
+        this.progressMessage = `生成失败: ${error.message}`;
+        this.$message.error(`生成失败: ${error.message}`);
+      } finally {
+        this.isGenerating = false;
+        this.stopProgressUpdate();
+      }
+    },
   }
 }
 </script>
@@ -366,88 +683,225 @@ export default {
 .create-poster {
   max-width: 1400px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 1.5rem;
 }
 
 .page-title {
   text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
   color: #1a56db;
 }
 
 .poster-creation-container {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 1.5rem;
-  margin-bottom: 2rem;
+  grid-template-columns: 0.7fr 0.8fr 1.5fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
 }
 
-@media (min-width: 768px) {
+@media (max-width: 1200px) {
   .poster-creation-container {
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
+  }
+  
+  .result-section {
+    grid-column: span 2;
+  }
+  
+  .prompt-section {
+    grid-column: span 1;
   }
 }
 
-.form-section, .prompt-section, .result-section {
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-  padding: 1.25rem;
-  height: 100%;
+@media (max-width: 768px) {
+  .poster-creation-container {
+    grid-template-columns: 1fr;
+  }
+  
+  .prompt-section,
+  .result-section {
+    grid-column: span 1;
+  }
 }
 
-.form-section h3, .prompt-section h3, .result-section h3 {
-  margin-bottom: 1.25rem;
-  color: #1a56db;
-  border-bottom: 1px solid #e5e7eb;
-  padding-bottom: 0.75rem;
+.form-section,
+.prompt-section,
+.result-section {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 1rem;
+}
+
+.form-section h3,
+.prompt-section h3,
+.result-section h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #2d3748;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.5rem;
 }
 
 .product-image-uploader {
-  border: 1px dashed #d9d9d9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 2px dashed #cbd5e0;
   border-radius: 6px;
+  padding: 1rem;
   cursor: pointer;
-  position: relative;
-  overflow: hidden;
+  transition: border-color 0.3s;
   text-align: center;
-  padding: 1.5rem 0;
+  background-color: #f8fafc;
 }
 
 .product-image-uploader:hover {
   border-color: #1a56db;
+  background-color: #f0f5ff;
 }
 
-.uploaded-image {
-  max-width: 100%;
-  max-height: 200px;
-  display: block;
-  margin: 0 auto;
+.product-image-uploader .el-icon {
+  font-size: 2rem;
+  color: #1a56db;
+  margin-bottom: 0.5rem;
 }
 
-.prompt-container {
+.el-upload__text {
+  color: #4a5568;
+  font-weight: 500;
+  font-size: 1rem;
+  margin: 0.5rem 0;
+}
+
+.el-upload__text em {
+  color: #1a56db;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.el-upload__tip {
+  color: #718096;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+/* 模板选择区域样式优化 */
+.template-selection-section h4 {
+  margin-bottom: 0.75rem;
+  font-size: 1rem;
+  color: #4a5568;
+}
+
+.template-carousel {
+  width: 100%;
+  overflow-x: auto;
+  padding: 0.5rem 0;
+}
+
+.template-cards {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.75rem;
+}
+
+/* 添加紧凑型模板卡片样式 */
+.template-card-compact {
+  min-width: 150px;
+  max-width: 180px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+  padding: 0.5rem;
+  background-color: #f7fafc;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  position: relative;
+}
+
+.template-card-compact:before {
+  content: "点击选择";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(26, 86, 219, 0.1);
+  color: #1a56db;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  opacity: 0;
+  transition: opacity 0.3s;
+  border-radius: 4px;
+}
+
+.template-card-compact:hover:before {
+  opacity: 1;
+}
+
+.template-card-compact.selected:before {
+  content: "已选择";
+  background-color: rgba(26, 86, 219, 0.15);
+  opacity: 1;
+}
+
+.template-card-compact .template-header {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  margin-bottom: 0.3rem;
 }
 
+.template-card-compact .template-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: 0.2rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.template-card-compact .template-footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  margin-top: 0.3rem;
+}
+
+.template-card-compact .template-scene {
+  padding: 1px 4px;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  background-color: #e5e7eb;
+  color: #4b5563;
+}
+
+.template-card-compact .template-size {
+  padding: 1px 4px;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+/* 提示词预览区域优化 */
 .prompt-preview {
-  background-color: #f3f4f6;
-  border-radius: 6px;
-  padding: 0.75rem;
-  margin-top: 0.5rem;
+  margin-top: 1rem;
 }
 
 .prompt-preview h4 {
   margin-bottom: 0.5rem;
-  color: #4b5563;
-  font-size: 0.9rem;
+  color: #444;
+  font-size: 1rem;
 }
 
-.prompt-content {
-  white-space: pre-line;
-  color: #1f2937;
-  line-height: 1.4;
-  font-size: 0.9rem;
+/* 减少提示词文本区域高度 */
+.prompt-preview .el-textarea textarea {
+  max-height: 120px;
 }
 
 .generate-btn {
@@ -455,47 +909,71 @@ export default {
 }
 
 .generation-progress {
-  margin-top: 1.5rem;
-  padding: 1rem;
+  margin-top: 1rem;
+  padding: 0.75rem;
   background-color: #f9fafb;
   border-radius: 6px;
 }
 
 .progress-text {
-  margin-top: 0.5rem;
-  font-size: 0.9rem;
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
   color: #4b5563;
   text-align: center;
 }
 
+/* 海报结果区域优化 */
 .empty-result {
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 300px;
+  height: 260px;
 }
 
 .poster-result {
   display: flex;
   flex-direction: column;
   align-items: center;
+  height: 100%;
+  min-height: 600px;
+  width: 100%;
 }
 
 .poster-image {
   max-width: 100%;
-  max-height: 350px;
-  margin-bottom: 1rem;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  min-height: 400px;
+  max-height: 600px;
+  width: auto;
+  object-fit: contain;
+  margin-bottom: 0.75rem;
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.08);
 }
 
 .poster-actions {
   display: flex;
-  gap: 0.75rem;
-  margin-top: 0.75rem;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
 }
 
 .backup-notice {
-  margin: 0.75rem 0;
+  margin: 0.5rem 0;
   width: 100%;
+}
+
+.uploaded-image {
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  margin-bottom: 0.5rem;
+}
+
+.template-card-compact:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
+}
+
+.template-card-compact.selected {
+  border-color: #1a56db;
+  background-color: #ebf4ff;
 }
 </style> 

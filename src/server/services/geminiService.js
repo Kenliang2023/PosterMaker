@@ -45,7 +45,7 @@ const generatePosterProposals = async (productInfo) => {
           },
           position: {
             type: SchemaType.STRING,
-            description: "产品在海报中的位置",
+            description: "产品在海报中的位置，产品图片只能占画面30-40%的面积，必须确保背景环境清晰可见",
           },
           background: {
             type: SchemaType.STRING,
@@ -77,7 +77,8 @@ const generatePosterProposals = async (productInfo) => {
           },
           posterSize: {
             type: SchemaType.STRING,
-            description: "海报尺寸",
+            description: "海报尺寸，只能选择16:9横版、9:16竖版或1:1方形三种标准格式",
+            enum: ["16:9", "9:16", "1:1"]
           },
           overallStyle: {
             type: SchemaType.STRING,
@@ -103,7 +104,7 @@ const generatePosterProposals = async (productInfo) => {
           },
           displayedText: {
             type: SchemaType.OBJECT,
-            description: "海报上显示的文字内容，所有需在海报上显示的文字必须用引号包围",
+            description: "海报上显示的文字内容，这些文字必须显示在最终海报上，所有需在海报上显示的文字必须用引号包围",
             properties: {
               headline: {
                 type: SchemaType.STRING,
@@ -156,19 +157,24 @@ ${productInfo.sceneDescription ? `* 使用场景详细描述: "${productInfo.sce
 
 要求每个方案都包含：
 - 独特的风格名称和简短描述
-- 产品在海报中的位置（但不需要前景描述，因为会使用用户上传的产品图片）
-- 背景描述和场景设定
+- 产品在海报中的位置（产品图片只能占画面30-40%的面积，必须确保背景环境清晰可见）
+- 背景描述和场景设定（必须是与产品功能相关的真实应用场景）
 - 产品特点文字的位置和布局
 - 视觉要素（光影效果、色调、材质等）
-- 海报尺寸和整体风格
+- 海报尺寸（只能选择16:9、9:16、1:1三种标准格式）
 - 产品与背景环境协调统一的表现：
   * 详细描述产品发出的光线如何与背景环境融合，包括光线在表面的反射、扩散和投影效果
   * 描述产品在场景中的具体安装位置、方式和作用，确保符合实际应用逻辑
   * 说明产品与环境在色彩、风格和主题上如何保持统一和协调
-- 海报上显示的文字内容：
+- 海报上显示的文字内容（这些文字必须显示在最终海报上）：
   * 主标题文字：必须用引号包围，如"高亮度LED灯带"
   * 产品特点：每条都用引号包围，如["高显色性", "防水设计"]
   * 标语/副标题：用引号包围，如"照亮您的世界"
+
+非常重要：
+1. 所有文字内容必须用引号包围，这样文生图模型才能正确显示文字
+2. 产品只能占据画面30-40%的面积，必须确保背景环境清晰可见
+3. 海报尺寸只能从16:9、9:16、1:1三种标准格式中选择一种
 
 请确保方案多样化，涵盖不同的设计风格（如现代简约、科技感、自然环保等）和不同的应用场景（家庭、商业、办公等）。每个方案的背景和产品必须有明确的视觉和功能上的关联，确保生成的海报看起来自然、专业且有说服力。`;
 
@@ -344,8 +350,31 @@ ${basePrompt}
             finalPrompt += `\n\n产品特点文字位于${proposal.featurePosition}，写着"${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"。`;
           }
         }
+        // 如果是主标题或标语缺失，尝试插入
+        else if (proposal.displayedText && (element.key.includes(proposal.displayedText.headline) || element.key.includes(proposal.displayedText.tagline))) {
+          // 添加主标题
+          if (element.key.includes(proposal.displayedText.headline)) {
+            finalPrompt += `\n\n主标题文字清晰可见: "${proposal.displayedText.headline}"。`;
+          }
+          // 添加标语
+          if (element.key.includes(proposal.displayedText.tagline)) {
+            finalPrompt += `\n\n标语文字清晰可见: "${proposal.displayedText.tagline}"。`;
+          }
+        }
       }
     });
+    
+    // 确保尺寸比例要求已包含
+    if (!finalPrompt.includes("30-40%") && !finalPrompt.includes("30%到40%")) {
+      finalPrompt += "\n\n产品图片仅占画面30-40%的面积，确保背景环境清晰可见。";
+    }
+    
+    // 检查海报尺寸
+    const sizeFormats = ["16:9", "9:16", "1:1"];
+    const hasSizeFormat = sizeFormats.some(format => finalPrompt.includes(format));
+    if (!hasSizeFormat) {
+      finalPrompt += `\n\n海报尺寸为${proposal.posterSize || "16:9"}格式。`;
+    }
     
     console.log('Gemini返回的最终提示词(检查后):', finalPrompt);
     

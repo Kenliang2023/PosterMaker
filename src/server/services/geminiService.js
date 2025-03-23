@@ -1,13 +1,271 @@
-// 使用Google官方客户端库
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-const fs = require('fs');
+const axios = require('axios');
+const fs = require('fs').promises;
 const path = require('path');
+const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, SchemaType } = require('@google/generative-ai');
+const { v4: uuidv4 } = require('uuid');
+const sharp = require('sharp');
+const { proposalMetaPromptTemplate, finalPromptMetaTemplate, createBasePrompt } = require('../templates/metaPrompts');
 require('dotenv').config();
 
 // Gemini API配置
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+// 使用gemini-2.0-flash-exp模型，该模型支持图像生成
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash-exp:generateContent';
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000;
+
+// 初始化 Google Generative AI
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+
+/**
+ * 使用Gemini文本模型生成海报设计方案
+ * @param {object} productInfo - 产品信息
+ * @returns {Promise<Array>} - 海报方案数组
+ */
+const generatePosterProposals = async (productInfo) => {
+  try {
+    console.log('===== 开始调用Gemini文本模型生成海报方案 =====');
+    console.log('产品信息:', JSON.stringify(productInfo, null, 2));
+    
+    // 定义方案输出的结构化Schema
+    const schema = {
+      type: SchemaType.ARRAY,
+      description: "海报设计方案列表",
+      items: {
+        type: SchemaType.OBJECT,
+        properties: {
+          proposalId: {
+            type: SchemaType.STRING,
+            description: "方案唯一ID",
+          },
+          styleName: {
+            type: SchemaType.STRING,
+            description: "风格名称",
+          },
+          styleDescription: {
+            type: SchemaType.STRING,
+            description: "风格简短描述",
+          },
+          position: {
+            type: SchemaType.STRING,
+            description: "产品在海报中的位置",
+          },
+          background: {
+            type: SchemaType.STRING,
+            description: "背景描述",
+          },
+          featurePosition: {
+            type: SchemaType.STRING,
+            description: "产品特点文字位置",
+          },
+          layout: {
+            type: SchemaType.STRING,
+            description: "整体布局描述",
+          },
+          backgroundDesc: {
+            type: SchemaType.STRING,
+            description: "背景材质、光线和质感描述",
+          },
+          lightingRequirements: {
+            type: SchemaType.STRING,
+            description: "光影要求",
+          },
+          textRequirements: {
+            type: SchemaType.STRING,
+            description: "文字要求",
+          },
+          colorTone: {
+            type: SchemaType.STRING,
+            description: "色调要求",
+          },
+          posterSize: {
+            type: SchemaType.STRING,
+            description: "海报尺寸",
+          },
+          overallStyle: {
+            type: SchemaType.STRING,
+            description: "海报整体风格",
+          }
+        },
+        required: [
+          "proposalId", "styleName", "styleDescription", "position", 
+          "background", "featurePosition", "layout", "backgroundDesc", 
+          "lightingRequirements", "textRequirements", "colorTone", 
+          "posterSize", "overallStyle"
+        ]
+      },
+      minItems: 3,
+      maxItems: 5
+    };
+    
+    // 初始化文本模型，配置结构化输出
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.0-flash",
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: schema
+      }
+    });
+    
+    // 使用模板构建元提示词
+    const metaPrompt = proposalMetaPromptTemplate(productInfo);
+
+    // 调用API生成内容
+    console.log('向Gemini发送方案生成请求...');
+    const result = await model.generateContent(metaPrompt);
+    
+    // 提取返回的结构化数据
+    const proposalsText = result.response.text().trim();
+    console.log('Gemini返回的结构化方案:', proposalsText);
+    
+    // 解析JSON数据
+    const proposals = JSON.parse(proposalsText);
+    
+    // 确保所有方案中都不包含前景描述，而是使用统一表述
+    proposals.forEach(proposal => {
+      // 如果schema中仍包含foreground字段(为了向后兼容)，就设置为固定文本
+      if (proposal.hasOwnProperty('foreground')) {
+        proposal.foreground = "保留图片原样，作为海报的主体";
+      }
+    });
+    
+    return proposals;
+  } catch (error) {
+    console.error('生成海报方案失败:', error.message);
+    console.error('错误堆栈:', error.stack);
+    throw error;
+  }
+};
+
+/**
+ * 基于选定的方案生成最终海报提示词
+ * @param {object} proposal - 选择的海报方案
+ * @param {object} productInfo - 产品信息
+ * @returns {Promise<string>} - 最终海报提示词
+ */
+const generateFinalPromptFromProposal = async (proposal, productInfo) => {
+  try {
+    console.log('===== 开始基于方案生成最终提示词 =====');
+    
+    // 使用模板生成基础提示词
+    const basePrompt = createBasePrompt(proposal, productInfo);
+    
+    // 初始化文本模型
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    
+    // 使用模板构建元提示词
+    const metaPrompt = finalPromptMetaTemplate(proposal, productInfo, basePrompt);
+    
+    // 调用API生成内容
+    console.log('向Gemini发送最终提示词生成请求...');
+    console.log('元提示词:', metaPrompt);
+    const result = await model.generateContent(metaPrompt);
+    
+    // 提取返回的文本
+    let finalPrompt = result.response.text().trim();
+    
+    // 检查并确保关键元素存在，移除任何前景描述
+    finalPrompt = finalPrompt.replace(/前景描述：.*?，和海报背景无缝组成完整海报。/g, '保留图片原样，作为海报的主体。');
+    
+    const keyElements = [
+      { key: `"${productInfo.name}"`, fallback: `一张"${productInfo.name}"商业海报` },
+      { key: `"${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"`, fallback: `产品特点文字位于${proposal.featurePosition}，写着"${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"` },
+      { key: "左上角品牌 LOGO 写着：\"RS-LED\"", fallback: "左上角品牌 LOGO 写着：\"RS-LED\"" },
+      { key: "右下角公司网址写着\"www.rs-led.com\"", fallback: "右下角公司网址写着\"www.rs-led.com\"" },
+      { key: "左下角是很小的公司二维码", fallback: "左下角是很小的公司二维码" }
+    ];
+    
+    // 对每个关键元素进行检查
+    keyElements.forEach(element => {
+      if (!finalPrompt.includes(element.key)) {
+        console.warn(`警告：优化后的提示词缺少关键元素: ${element.key}`);
+        // 如果是文本开头缺少产品名称，进行添加
+        if (element.key.includes(productInfo.name) && !finalPrompt.startsWith('一张')) {
+          finalPrompt = `一张"${productInfo.name}"商业海报。\n\n${finalPrompt}`;
+        } 
+        // 如果是结尾缺少LOGO等信息，进行添加
+        else if (element.key.includes("RS-LED") || element.key.includes("www.rs-led.com") || element.key.includes("二维码")) {
+          if (!finalPrompt.endsWith('.')) finalPrompt += '.';
+          finalPrompt += '\n\n' + element.fallback + '.';
+        }
+        // 如果是产品特点缺失，尝试插入
+        else if (element.key.includes(productInfo.features)) {
+          const position = finalPrompt.indexOf("产品特点") || finalPrompt.indexOf("特点");
+          if (position !== -1) {
+            const beforeText = finalPrompt.substring(0, position + 6);
+            const afterText = finalPrompt.substring(position + 6);
+            finalPrompt = `${beforeText}文字位于${proposal.featurePosition}，写着"${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"${afterText}`;
+          } else {
+            // 如果找不到插入点，追加到末尾
+            finalPrompt += `\n\n产品特点文字位于${proposal.featurePosition}，写着"${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"。`;
+          }
+        }
+      }
+    });
+    
+    console.log('Gemini返回的最终提示词(检查后):', finalPrompt);
+    
+    return finalPrompt;
+  } catch (error) {
+    console.error('生成最终提示词失败:', error.message);
+    console.error('错误堆栈:', error.stack);
+    // 如果出错，返回基础提示词
+    return createBasePrompt(proposal, productInfo);
+  }
+};
+
+/**
+ * 使用Gemini文本模型优化提示词
+ * @param {string} originalPrompt - 原始提示词
+ * @param {object} productInfo - 产品信息
+ * @returns {Promise<string>} - 优化后的提示词
+ */
+const optimizePromptWithGemini = async (originalPrompt, productInfo) => {
+  try {
+    console.log('===== 开始调用Gemini文本模型优化提示词 =====');
+    console.log('原始提示词:', originalPrompt);
+    
+    // 初始化文本模型
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    
+    // 构建元提示词，指导AI如何优化提示词
+    const metaPrompt = `我正在为LED灯带产品开发一个海报生成系统。请根据我提供的原始提示词和产品信息，优化提示词内容，使其更适合生成高质量的LED产品营销海报。
+
+原始提示词：
+${originalPrompt}
+
+产品信息：
+* 产品名称: ${productInfo.name}
+* 产品特点: ${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}
+* 目标客户: ${productInfo.targetAudience || '未指定'}
+
+优化要求：
+1. 请保持提示词的主要结构和关键元素不变
+2. 增强提示词中的视觉细节描述，如光影效果、色彩表现、照明氛围等
+3. 强化产品特点与具体应用场景的关联，使画面更具说服力
+4. 确保优化后的提示词仍包含原始提示词中的所有重要信息
+5. 保留品牌标识相关描述（如LOGO、网址等）
+6. 添加专业的LED照明术语，突出产品的技术优势
+7. 文本简洁明了，不要超过原始提示词长度的1.5倍
+
+请直接返回优化后的完整提示词，不需要解释或其他内容。`;
+
+    // 调用API生成内容
+    console.log('向Gemini发送元提示词请求...');
+    const result = await model.generateContent(metaPrompt);
+    
+    // 提取返回的文本
+    const optimizedPrompt = result.response.text().trim();
+    console.log('Gemini返回的优化提示词:', optimizedPrompt);
+    
+    return optimizedPrompt;
+  } catch (error) {
+    console.error('优化提示词失败:', error.message);
+    console.error('错误堆栈:', error.stack);
+    // 如果出错，返回原始提示词
+    return originalPrompt;
+  }
+};
 
 /**
  * 将图片转换为base64编码
@@ -17,7 +275,7 @@ const RETRY_DELAY = 1000;
 const imageToBase64 = async (imagePath) => {
   try {
     console.log(`开始读取图片: ${imagePath}`);
-    const imageBuffer = await fs.promises.readFile(imagePath);
+    const imageBuffer = await fs.readFile(imagePath);
     const base64Data = imageBuffer.toString('base64');
     console.log(`成功将图片转换为base64，大小: ${Math.round(base64Data.length / 1024)}KB`);
     return base64Data;
@@ -43,6 +301,15 @@ const generatePoster = async (imagePath, prompt) => {
   console.log(`图片路径: ${imagePath}`);
   console.log(`API密钥: ${GEMINI_API_KEY ? '已配置' : '未配置'}`);
 
+  // 检查提示词是否存在
+  if (!prompt) {
+    throw new Error('提示词不能为空');
+  }
+
+  // 修改提示词，去掉前景描述
+  const modifiedPrompt = prompt.replace(/前景描述：.*?，和海报背景无缝组成完整海报。/g, '保留图片原样，作为海报的主体。');
+  console.log(`修改后的提示词: ${modifiedPrompt}`);
+
   while (retries < MAX_RETRIES) {
     try {
       if (!GEMINI_API_KEY) {
@@ -50,50 +317,38 @@ const generatePoster = async (imagePath, prompt) => {
       }
 
       console.log(`尝试生成海报 (尝试 ${retries + 1}/${MAX_RETRIES})...`);
-      console.log(`使用提示词: ${prompt}`);
       
-      // 构建增强的提示词，包含创建海报的详细说明
-      const enhancedPrompt = `Create a professional marketing poster for an LED strip light product. 
-Design it with a modern, clean aesthetic that highlights the product's features.
-Make the poster visually appealing with a strong brand presence and compelling text layout.
-The poster should include these product features prominently: ${prompt}
-IMPORTANT: Generate a complete image of the poster, not just text describing it.`;
-
-      // 读取图片文件并转换为base64
-      const imageData = await imageToBase64(imagePath);
+      // 读取图片文件
+      const imageBuffer = await fs.readFile(imagePath);
+      const mimeType = path.extname(imagePath).toLowerCase() === '.png' ? 'image/png' : 'image/jpeg';
+      const base64Image = imageBuffer.toString('base64');
       
-      // 初始化客户端
-      const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-      
-      // 使用gemini-2.0-flash-exp-image-generation模型
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.0-flash-exp-image-generation",
-        generationConfig: {
-          temperature: 0.4,
-          topK: 32,
-          topP: 0.95,
-          maxOutputTokens: 2048,
-          responseModalities: ['Text', 'Image']
-        }
-      });
-      
-      console.log('准备发送API请求，同时提交文本和图片...');
-      
-      // 创建符合官方API要求的内容格式
-      const imageObj = {
+      // 创建多模态内容
+      const imagePart = {
         inlineData: {
-          data: imageData,
-          mimeType: "image/jpeg"
+          data: base64Image,
+          mimeType: mimeType
         }
       };
       
-      // 使用正确的格式发送请求
-      const result = await model.generateContent([enhancedPrompt, imageObj]);
-      const response = await result.response;
+      // 使用与测试文件相同的方式初始化模型
+      const model = genAI.getGenerativeModel({
+        model: "gemini-2.0-flash-exp-image-generation",
+        generationConfig: {
+          responseModalities: ['Text', 'Image']
+        },
+      });
       
-      console.log(`Gemini API响应成功`);
+      console.log("使用模型: gemini-2.0-flash-exp-image-generation");
+      
+      // 调用API生成内容，传递多模态内容
+      const parts = [imagePart, { text: modifiedPrompt }];
+      console.log("发送多模态内容请求...");
+      const response = await model.generateContent(parts);
+      console.log("API调用成功！");
       
       return response;
+      
     } catch (error) {
       lastError = error;
       retries++;
@@ -116,74 +371,64 @@ IMPORTANT: Generate a complete image of the poster, not just text describing it.
 };
 
 /**
- * 从Gemini API响应中提取图片数据
- * @param {Object} response - Gemini API响应
- * @returns {string|null} - base64编码的图片数据或null
+ * 保存生成的海报图片
+ * @param {string} base64Image - base64编码的图片数据
+ * @param {string} fileName - 文件名
+ * @returns {Promise<string>} - 保存的文件路径
  */
-const extractImageFromResponse = (response) => {
+const savePosterImage = async (base64Image, fileName) => {
   try {
-    console.log('开始从响应中提取图像...');
-    
-    if (!response || !response.candidates || response.candidates.length === 0) {
-      console.error('响应中没有候选结果');
-      return null;
+    // 从base64数据中提取图片数据部分
+    const matches = base64Image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) {
+      throw new Error('无效的base64图片数据');
     }
+
+    const data = Buffer.from(matches[2], 'base64');
+    const filePath = path.join(__dirname, '../../../uploads/posters', fileName);
     
-    const parts = response.candidates[0].content.parts;
-    console.log(`找到 ${parts.length} 个内容部分`);
-    
-    // 查找包含图像数据的部分
-    for (const part of parts) {
-      if (part.inlineData) {
-        console.log(`找到图像数据，MIME类型: ${part.inlineData.mimeType}`);
-        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-      }
-    }
-    
-    console.error('在响应中未找到图像数据');
-    return null;
+    await fs.writeFile(filePath, data);
+    return `/uploads/posters/${fileName}`;
   } catch (error) {
-    console.error('提取图像时出错:', error);
-    return null;
+    console.error('保存海报图片失败:', error);
+    throw new Error('保存海报图片失败');
   }
 };
 
 /**
- * 保存海报图片
- * @param {string} imageData - base64编码的图片数据
- * @param {string} fileName - 文件名
- * @returns {Promise<string>} - 保存的图片URL
+ * 解析Gemini API响应中的图片数据
+ * @param {Object} geminiResponse - Gemini API响应
+ * @returns {string|null} - 图片的base64数据
  */
-const savePosterImage = async (imageData, fileName) => {
-  // 使用public目录，确保前端可以访问
-  const posterDir = path.join(__dirname, '../../../public/uploads/posters');
-  const filePath = path.join(posterDir, fileName);
-  
+const extractImageFromResponse = (geminiResponse) => {
   try {
-    // 确保目录存在
-    if (!fs.existsSync(posterDir)) {
-      fs.mkdirSync(posterDir, { recursive: true });
-      console.log(`创建海报目录: ${posterDir}`);
+    console.log('解析Gemini API响应...');
+    
+    // 检查响应格式
+    for (const part of geminiResponse.response.candidates[0].content.parts) {
+      // 根据部分类型，提取文本或图像
+      if (part.text) {
+        console.log("响应包含文本:", part.text.substring(0, 100) + "...");
+      } else if (part.inlineData) {
+        console.log("发现图像数据");
+        const imageData = part.inlineData.data;
+        return `data:${part.inlineData.mimeType};base64,${imageData}`;
+      }
     }
     
-    // 从base64数据中提取实际的base64编码部分
-    let base64Data = imageData;
-    if (imageData.includes('base64,')) {
-      base64Data = imageData.split('base64,')[1];
-    }
-    
-    await fs.promises.writeFile(filePath, Buffer.from(base64Data, 'base64'));
-    
-    // 返回正确的公共URL路径，始终使用/public前缀
-    return `/public/uploads/posters/${fileName}`;
+    console.log('未能从响应中提取图片数据');
+    return null;
   } catch (error) {
-    console.error(`保存海报图片失败: ${error.message}`);
-    throw new Error(`保存海报图片失败: ${error.message}`);
+    console.error('解析Gemini响应失败:', error);
+    return null;
   }
 };
 
 module.exports = {
   generatePoster,
   savePosterImage,
-  extractImageFromResponse
+  extractImageFromResponse,
+  optimizePromptWithGemini,
+  generatePosterProposals,
+  generateFinalPromptFromProposal
 }; 

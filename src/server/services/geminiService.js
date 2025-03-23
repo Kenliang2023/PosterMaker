@@ -79,18 +79,16 @@ IMPORTANT: Generate a complete image of the poster, not just text describing it.
       
       console.log('准备发送API请求，同时提交文本和图片...');
       
-      // 创建包含图片的内容部分
-      const fileObject = {
-        data: Buffer.from(imageData, 'base64'),
-        mimeType: 'image/jpeg'
+      // 创建符合官方API要求的内容格式
+      const imageObj = {
+        inlineData: {
+          data: imageData,
+          mimeType: "image/jpeg"
+        }
       };
       
-      // 将文本和图片组合成内容数组发送请求
-      const result = await model.generateContent([
-        enhancedPrompt, 
-        fileObject
-      ]);
-      
+      // 使用正确的格式发送请求
+      const result = await model.generateContent([enhancedPrompt, imageObj]);
       const response = await result.response;
       
       console.log(`Gemini API响应成功`);

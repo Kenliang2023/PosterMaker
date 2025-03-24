@@ -228,11 +228,11 @@ const generateFinalPromptFromProposal = async (proposal, productInfo) => {
 
 海报的背景是：${proposal.background}。
 
-海报主标题：${proposal.displayedText.headline}。
+主标题写着"${proposal.displayedText.headline || productInfo.name}"。
 
-产品特点文字：${Array.isArray(proposal.displayedText.features) ? proposal.displayedText.features.map(feature => `"${feature}"`).join('、') : `"${proposal.displayedText.features}"`}。
+产品特点文字位于${proposal.featurePosition}，写着"${Array.isArray(proposal.displayedText.features) ? proposal.displayedText.features.map(feature => `${feature}`).join('、') : `${proposal.displayedText.features}`}"。
 
-海报标语：${proposal.displayedText.tagline}。
+标语文字写着"${proposal.displayedText.tagline}"。
 
 整体布局：${proposal.layout}。
 
@@ -253,7 +253,7 @@ const generateFinalPromptFromProposal = async (proposal, productInfo) => {
 - 安装位置：${proposal.integrationElements.installationContext || '未指定'}
 - 视觉和谐：${proposal.integrationElements.visualHarmony || '未指定'}
 
-左上角品牌 LOGO 写着：\\"RS-LED\\"，右下角公司网址写着\\"www.rs-led.com\\"，左下角是很小的公司二维码。`;
+左上角品牌 LOGO 写着"RS-LED"，右下角公司网址写着"www.rs-led.com"，左下角是很小的公司二维码。`;
 
     // 初始化文本模型
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
@@ -276,17 +276,18 @@ ${productInfo.sceneDescription ? `* 使用场景详细描述: "${productInfo.sce
 3. 添加专业的LED照明术语，突出产品的技术优势
 4. 确保提示词长度适中，重点突出
 5. 保留元素顺序和结构
-6. 必须严格保留以下关键元素，不得修改：
-   - 产品名称必须使用引号，即："${productInfo.name}"
-   - 产品特点必须使用引号，即："${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"
-   - 左上角品牌LOGO："RS-LED"
-   - 右下角网址："www.rs-led.com"
-   - 左下角的公司二维码
-   - 海报上显示的所有文字内容，包括主标题、特点和标语，必须保持引号包围
-   - 保留所有关于产品与环境协调的描述，包括光线融合、安装位置和视觉和谐部分
-7. 重要：保留图片原样作为海报主体，不要描述前景内容。图片将由用户上传提供，不需要生成模型创建。
+6. 必须严格使用英文引号(")而非中文引号("")来包围所有文字内容
+7. 必须严格保留以下关键元素，不得修改：
+   - 主标题必须保持使用"写着"XXX""的格式，并确保主标题内容为"${proposal.displayedText.headline || productInfo.name}"
+   - 产品特点文字必须保持使用"写着"XXX""的格式，内容保持不变
+   - 标语文字必须保持使用"写着"XXX""的格式，内容保持不变
+   - 左上角品牌LOGO必须使用"写着"RS-LED""的格式
+   - 右下角网址必须使用"写着"www.rs-led.com""的格式
+   - 左下角的公司二维码必须保留
+8. 非常重要：确保每种文字元素（主标题、产品特点、标语）的"写着"XXX""格式在最终提示词中只出现一次
+9. 重要：保留图片原样作为海报主体，不要描述前景内容。图片将由用户上传提供，不需要生成模型创建。
 
-请直接返回优化后的完整提示词，不要包含任何解释或其他内容。`;
+请直接返回优化后的完整提示词，不要包含任何解释或其他内容。所有引号都必须使用英文引号。`;
 
     // 调用API生成内容
     console.log('向Gemini发送最终提示词生成请求...');
@@ -299,9 +300,9 @@ ${productInfo.sceneDescription ? `* 使用场景详细描述: "${productInfo.sce
     // 检查关键元素是否存在，如果不存在则添加
     const keyElements = [
       { key: `"${productInfo.name}"`, fallback: `一张"${productInfo.name}"商业海报` },
-      { key: `${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}`, fallback: `产品特点：${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}` },
-      { key: "RS-LED", fallback: "左上角品牌 LOGO 写着：\"RS-LED\"" },
-      { key: "www.rs-led.com", fallback: "右下角公司网址写着\"www.rs-led.com\"" },
+      { key: `写着"${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"`, fallback: `产品特点文字写着"${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"` },
+      { key: `写着"RS-LED"`, fallback: `左上角品牌 LOGO 写着"RS-LED"` },
+      { key: `写着"www.rs-led.com"`, fallback: `右下角公司网址写着"www.rs-led.com"` },
       { key: "左下角是很小的公司二维码", fallback: "左下角是很小的公司二维码" }
     ];
     
@@ -309,22 +310,21 @@ ${productInfo.sceneDescription ? `* 使用场景详细描述: "${productInfo.sce
     if (proposal.displayedText) {
       if (proposal.displayedText.headline) {
         keyElements.push({
-          key: `${proposal.displayedText.headline}`,
-          fallback: `海报主标题：${proposal.displayedText.headline}`
+          key: `写着"${proposal.displayedText.headline}"`,
+          fallback: `主标题写着"${proposal.displayedText.headline}"`
         });
       }
       if (proposal.displayedText.tagline) {
         keyElements.push({
-          key: `${proposal.displayedText.tagline}`,
-          fallback: `海报标语：${proposal.displayedText.tagline}`
+          key: `写着"${proposal.displayedText.tagline}"`,
+          fallback: `标语文字写着"${proposal.displayedText.tagline}"`
         });
       }
       if (proposal.displayedText.features && Array.isArray(proposal.displayedText.features)) {
-        proposal.displayedText.features.forEach(feature => {
-          keyElements.push({
-            key: `"${feature}"`,
-            fallback: `特点文字："${feature}"`
-          });
+        const featuresText = proposal.displayedText.features.join('、');
+        keyElements.push({
+          key: `写着"${featuresText}"`,
+          fallback: `产品特点文字写着"${featuresText}"`
         });
       }
     }
@@ -354,29 +354,31 @@ ${productInfo.sceneDescription ? `* 使用场景详细描述: "${productInfo.sce
         else if (element.key.includes(productInfo.features)) {
           const position = finalPrompt.indexOf("产品特点") || finalPrompt.indexOf("特点");
           if (position !== -1) {
-            const beforeText = finalPrompt.substring(0, position + 6);
-            const afterText = finalPrompt.substring(position + 6);
-            finalPrompt = `${beforeText}文字位于${proposal.featurePosition}，写着"${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"${afterText}`;
+            // 检查是否已经存在"写着"的格式
+            if (!finalPrompt.includes("写着")) {
+              const beforeText = finalPrompt.substring(0, position + 6);
+              const afterText = finalPrompt.substring(position + 6);
+              finalPrompt = `${beforeText}文字位于${proposal.featurePosition}，写着"${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"${afterText}`;
+            }
           } else {
             // 如果找不到插入点，追加到末尾
             finalPrompt += `\n\n产品特点文字位于${proposal.featurePosition}，写着"${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"。`;
           }
         }
         // 如果是主标题或标语缺失，尝试插入
-        else if (proposal.displayedText && (element.key.includes(proposal.displayedText.headline) || element.key.includes(proposal.displayedText.tagline))) {
+        else if (proposal.displayedText) {
           // 添加主标题
-          if (element.key.includes(proposal.displayedText.headline)) {
-            finalPrompt += `\n\n主标题文字清晰可见: ${proposal.displayedText.headline}。`;
+          if (element.key.includes(proposal.displayedText.headline) && !finalPrompt.includes("主标题写着")) {
+            finalPrompt += `\n\n主标题写着"${proposal.displayedText.headline}"。`;
           }
           // 添加标语
-          if (element.key.includes(proposal.displayedText.tagline)) {
-            finalPrompt += `\n\n标语文字清晰可见: ${proposal.displayedText.tagline}。`;
+          if (element.key.includes(proposal.displayedText.tagline) && !finalPrompt.includes("标语文字写着")) {
+            finalPrompt += `\n\n标语文字写着"${proposal.displayedText.tagline}"。`;
           }
-        }
-        // 如果是产品特点列表中的某一项缺失
-        else if (proposal.displayedText && proposal.displayedText.features && Array.isArray(proposal.displayedText.features)) {
-          if (element.key.startsWith('"') && proposal.displayedText.features.some(feature => element.key.includes(feature))) {
-            finalPrompt += `\n\n特点文字清晰可见: ${element.key}。`;
+          // 添加特点
+          if (element.key.includes('产品特点') && proposal.displayedText.features && Array.isArray(proposal.displayedText.features) && !finalPrompt.includes("产品特点文字写着")) {
+            const featuresText = proposal.displayedText.features.join('、');
+            finalPrompt += `\n\n产品特点文字写着"${featuresText}"。`;
           }
         }
       }
@@ -402,7 +404,7 @@ ${productInfo.sceneDescription ? `* 使用场景详细描述: "${productInfo.sce
     console.error('错误堆栈:', error.stack);
     
     // 如果出错，返回基本的提示词
-    return `一张"${productInfo.name}"商业海报。保留图片原样，作为海报的主体。产品特点："${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"。左上角品牌 LOGO 写着："RS-LED"，右下角公司网址写着"www.rs-led.com"，左下角是很小的公司二维码。`;
+    return `一张"${productInfo.name}"商业海报。保留图片原样，作为海报的主体。主标题写着"${productInfo.name}"。产品特点文字写着"${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"。左上角品牌 LOGO 写着"RS-LED"，右下角公司网址写着"www.rs-led.com"，左下角是很小的公司二维码。`;
   }
 };
 

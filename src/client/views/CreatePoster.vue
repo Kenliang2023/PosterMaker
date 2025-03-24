@@ -1,7 +1,5 @@
 <template>
   <div class="create-poster">
-    <h2 class="page-title">创建LED灯带产品海报</h2>
-    
     <div class="poster-creation-container">
       <!-- 第一栏：产品信息 -->
       <div class="form-section">
@@ -27,12 +25,20 @@
           </el-form-item>
 
           <el-form-item label="产品使用场景">
-            <el-select v-model="productInfo.targetAudience" placeholder="选择产品使用场景">
-              <el-option label="家庭用户" value="家庭用户"></el-option>
-              <el-option label="商业场所" value="商业场所"></el-option>
-              <el-option label="办公环境" value="办公环境"></el-option>
-              <el-option label="工程项目" value="工程项目"></el-option>
-            </el-select>
+            <div class="scene-selectors-row">
+              <el-select v-model="productInfo.targetAudience" placeholder="选择使用场景" class="half-width-select">
+                <el-option label="工程项目" value="工程项目"></el-option>
+                <el-option label="家居装饰" value="家居装饰"></el-option>
+                <el-option label="商业照明" value="商业照明"></el-option>
+                <el-option label="户外景观" value="户外景观"></el-option>
+              </el-select>
+              
+              <el-select v-model="productInfo.posterSize" placeholder="选择画幅比例" class="half-width-select">
+                <el-option label="横版 (16:9)" value="16:9"></el-option>
+                <el-option label="竖版 (9:16)" value="9:16"></el-option>
+                <el-option label="方形 (1:1)" value="1:1"></el-option>
+              </el-select>
+            </div>
           </el-form-item>
           
           <el-form-item label="使用场景详细描述">
@@ -40,7 +46,7 @@
               type="textarea"
               v-model="productInfo.sceneDescription"
               :rows="3"
-              placeholder="请描述产品的具体使用场景，例如：用于酒店走廊照明，需要柔和光线和RGB颜色变化效果"
+              placeholder="描述产品的具体使用场景，例如：'智能办公室照明系统'"
             ></el-input>
           </el-form-item>
           
@@ -280,11 +286,14 @@ export default {
   data() {
     return {
       productInfo: {
-        name: 'LED灯带',
-        features: '高亮度\n高光效\n高性价比',
-        targetAudience: '工程项目',
-        sceneDescription: '',
-        image: ''
+        name: "LED灯带",
+        features: `高亮度
+高光效
+高性价比`,
+        targetAudience: "工程项目",
+        posterSize: "16:9",
+        sceneDescription: "桑拿房氛围照明", // 设置默认值
+        imageUrl: ""
       },
       // 新增方案相关数据
       proposals: [],
@@ -357,7 +366,8 @@ export default {
           features: this.productInfo.features.split('\n'),
           targetAudience: this.productInfo.targetAudience,
           sceneDescription: this.productInfo.sceneDescription,
-          imageUrl: this.productInfo.image
+          imageUrl: this.productInfo.image,
+          posterSize: this.productInfo.posterSize // 添加海报画幅信息
         };
         
         // 请求生成方案
@@ -435,7 +445,8 @@ export default {
               name: this.productInfo.name,
               features: this.productInfo.features.split('\n'),
               targetAudience: this.productInfo.targetAudience,
-              sceneDescription: this.productInfo.sceneDescription
+              sceneDescription: this.productInfo.sceneDescription,
+              posterSize: this.productInfo.posterSize // 添加海报画幅信息
             }
           })
         });
@@ -459,7 +470,8 @@ export default {
             features: this.productInfo.features.split('\n'),
             targetAudience: this.productInfo.targetAudience,
             sceneDescription: this.productInfo.sceneDescription,
-            imageUrl: this.productInfo.image
+            imageUrl: this.productInfo.image,
+            posterSize: this.productInfo.posterSize // 添加海报画幅信息
           }
         };
         
@@ -749,11 +761,14 @@ export default {
     
     resetForm() {
       this.productInfo = {
-        name: 'LED灯带',
-        features: '高亮度\n高光效\n高性价比',
-        targetAudience: '工程项目',
-        sceneDescription: '',
-        image: ''
+        name: "LED灯带",
+        features: `高亮度
+高光效
+高性价比`,
+        targetAudience: "工程项目",
+        posterSize: "16:9",
+        sceneDescription: "桑拿房氛围照明", // 设置默认值
+        imageUrl: ""
       };
       this.proposals = [];
       this.selectedProposal = null;
@@ -929,12 +944,6 @@ export default {
   max-width: 1400px;
   margin: 0 auto;
   padding: 1.5rem;
-}
-
-.page-title {
-  text-align: center;
-  margin-bottom: 1.5rem;
-  color: #1a56db;
 }
 
 .poster-creation-container {
@@ -1128,5 +1137,14 @@ export default {
   text-align: left;
   font-size: 0.9rem;
   color: #374151;
+}
+
+.scene-selectors-row {
+  display: flex;
+  gap: 10px;
+}
+
+.half-width-select {
+  width: 50%;
 }
 </style> 

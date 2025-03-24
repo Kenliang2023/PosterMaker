@@ -432,48 +432,23 @@ export default {
       this.startProgressSimulation();
       
       try {
-        // 首先获取最终提示词
-        const promptResponse = await fetch('/api/prompts/generate-final-prompt-from-proposal', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            sessionId: this.proposalsSessionId,
-            proposalId: this.selectedProposal.proposalId,
-            productInfo: {
-              name: this.productInfo.name,
-              features: this.productInfo.features.split('\n'),
-              targetAudience: this.productInfo.targetAudience,
-              sceneDescription: this.productInfo.sceneDescription,
-              posterSize: this.productInfo.posterSize // 添加海报画幅信息
-            }
-          })
-        });
-        
-        const promptResult = await promptResponse.json();
-        
-        if (!promptResult.success) {
-          throw new Error('获取最终提示词失败: ' + promptResult.message);
-        }
-        
-        // 保存最终提示词
-        this.finalPrompt = promptResult.finalPrompt;
-        this.finalPromptEn = promptResult.finalPromptEn;
-        
         // 构造生成海报的请求数据
         const requestData = {
           proposalId: this.selectedProposal.proposalId,
           sessionId: this.proposalsSessionId,
           productInfo: {
             name: this.productInfo.name,
-            features: this.productInfo.features.split('\n'),
+            features: Array.isArray(this.productInfo.features) 
+              ? this.productInfo.features 
+              : this.productInfo.features.split('\n').filter(f => f.trim() !== ''),
             targetAudience: this.productInfo.targetAudience,
             sceneDescription: this.productInfo.sceneDescription,
             imageUrl: this.productInfo.imageUrl,
             posterSize: this.productInfo.posterSize // 添加海报画幅信息
           }
         };
+        
+        console.log('发送海报生成请求:', JSON.stringify(requestData, null, 2));
         
         // 请求生成海报
         const response = await fetch('/api/posters/generate', {
@@ -489,6 +464,11 @@ export default {
         if (result.success) {
           this.generatedPoster = result.posterUrl + '?t=' + new Date().getTime(); // 添加时间戳防止缓存
           this.isBackupPoster = result.useBackup;
+          
+          // 如果返回了最终提示词，更新本地提示词
+          if (result.finalPrompt) {
+            this.finalPrompt = result.finalPrompt;
+          }
           
           this.stopProgressSimulation(true);
           this.$message.success(

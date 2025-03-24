@@ -21,189 +21,264 @@ const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
  */
 const generatePosterProposals = async (productInfo) => {
   try {
-    console.log('===== 开始调用Gemini文本模型生成海报方案 =====');
-    console.log('产品信息:', JSON.stringify(productInfo, null, 2));
+    console.log('===== 开始生成海报方案 =====');
+    console.log('产品信息:', JSON.stringify(productInfo));
     
-    // 定义方案输出的结构化Schema
-    const schema = {
-      type: SchemaType.ARRAY,
-      description: "海报设计方案列表",
-      items: {
-        type: SchemaType.OBJECT,
-        description: "单个海报设计方案",
-        properties: {
-          proposalId: {
-            type: SchemaType.STRING,
-            description: "提案ID",
+    // 初始化文本模型
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    
+    // 定义提案schema，确保方案具有统一的结构
+    const proposalSchema = {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "properties": {
+          "proposalId": {
+            "type": "string",
+            "description": "方案的唯一标识符，使用UUID格式"
           },
-          styleName: {
-            type: SchemaType.STRING,
-            description: "海报风格名称，如'现代简约'、'科技感'、'环保自然'等",
+          "styleName": {
+            "type": "string",
+            "description": "海报设计风格的名称，需要独特且具有吸引力"
           },
-          styleDescription: {
-            type: SchemaType.STRING,
-            description: "对海报风格的简要描述",
+          "styleDescription": {
+            "type": "string",
+            "description": "对设计风格的简短描述，解释为什么适合此产品"
           },
-          position: {
-            type: SchemaType.STRING,
-            description: "产品在海报中的位置，产品图片只能占画面15-30%的面积，必须确保背景环境清晰可见",
+          "position": {
+            "type": "string",
+            "description": "产品图片在海报中的位置，例如中央、右侧、底部等，明确指出位置"
           },
-          background: {
-            type: SchemaType.STRING,
-            description: "详细描述海报背景场景，突出与产品使用环境的关联",
+          "background": {
+            "type": "string",
+            "description": "海报背景的详细描述，包括风格、元素和氛围"
           },
-          featurePosition: {
-            type: SchemaType.STRING,
-            description: "产品特点文字在海报中的位置和排列方式",
+          "featurePosition": {
+            "type": "string",
+            "description": "产品特点文字在海报中的位置，例如左侧、底部等"
           },
-          layout: {
-            type: SchemaType.STRING,
-            description: "海报整体布局描述",
+          "layout": {
+            "type": "string",
+            "description": "海报整体布局安排的详细描述"
           },
-          backgroundDesc: {
-            type: SchemaType.STRING,
-            description: "背景的材质、质感、氛围等详细描述",
+          "backgroundDesc": {
+            "type": "string",
+            "description": "背景环境的详细描述，包括与产品的互动方式"
           },
-          lightingRequirements: {
-            type: SchemaType.STRING,
-            description: "海报中光线和照明效果的要求",
+          "lightingRequirements": {
+            "type": "string",
+            "description": "海报中光影效果的详细要求"
           },
-          textRequirements: {
-            type: SchemaType.STRING,
-            description: "文字字体、大小、颜色等的要求",
+          "textRequirements": {
+            "type": "string",
+            "description": "文字样式和排版的详细要求"
           },
-          colorTone: {
-            type: SchemaType.STRING,
-            description: "海报整体色调要求",
+          "colorTone": {
+            "type": "string",
+            "description": "海报的主要色调和配色方案"
           },
-          posterSize: {
-            type: SchemaType.STRING,
-            description: "海报尺寸，只能选择16:9、9:16、1:1三种标准格式",
-            enum: ["16:9", "9:16", "1:1"]
+          "posterSize": {
+            "type": "string",
+            "description": "海报的画幅比例，如16:9、9:16或1:1"
           },
-          overallStyle: {
-            type: SchemaType.STRING,
-            description: "海报整体设计风格",
+          "overallStyle": {
+            "type": "string",
+            "description": "海报的整体风格和设计语言描述"
           },
-          integrationElements: {
-            type: SchemaType.OBJECT,
-            description: "产品与背景环境的协调元素",
-            properties: {
-              lightIntegration: {
-                type: SchemaType.STRING,
-                description: "产品发出的光线如何与背景环境融合"
+          "integrationElements": {
+            "type": "object",
+            "properties": {
+              "lightIntegration": {
+                "type": "string",
+                "description": "描述产品灯光如何与海报背景环境融合"
               },
-              installationContext: {
-                type: SchemaType.STRING,
-                description: "产品在场景中的安装位置和方式"
+              "installationContext": {
+                "type": "string",
+                "description": "产品在实际环境中的安装位置和方式"
               },
-              visualHarmony: {
-                type: SchemaType.STRING,
-                description: "产品与环境在色彩和风格上的协调"
+              "visualHarmony": {
+                "type": "string",
+                "description": "产品与背景环境的视觉协调效果"
               }
             },
-            required: ["lightIntegration", "installationContext", "visualHarmony"]
+            "required": ["lightIntegration"]
           },
-          displayedText: {
-            type: SchemaType.OBJECT,
-            description: "海报上显示的文字内容，这些文字必须显示在最终海报上，所有需在海报上显示的文字必须用引号包围",
-            properties: {
-              headline: {
-                type: SchemaType.STRING,
-                description: "海报主标题文字，必须带引号，例如：\"高亮度LED灯带\""
+          "displayedText": {
+            "type": "object",
+            "description": "海报上显示的文本内容",
+            "properties": {
+              "headline": {
+                "type": "string",
+                "description": "海报主标题，使用双引号，如"极致光效，温暖家居""
               },
-              tagline: {
-                type: SchemaType.STRING,
-                description: "海报标语或副标题，必须带引号，例如：\"照亮您的世界\""
+              "tagline": {
+                "type": "string",
+                "description": "海报标语/副标题，使用双引号，如"照亮生活每一刻""
               },
-              features: {
-                type: SchemaType.ARRAY,
-                description: "产品特点文字列表，每个特点必须带引号，最多不超过3个特点",
-                items: {
-                  type: SchemaType.STRING
+              "features": {
+                "type": "array",
+                "description": "产品特点列表，最多3点，每点都用双引号",
+                "items": {
+                  "type": "string"
                 },
-                maxItems: 3
+                "maxItems": 3
               }
             },
-            required: ["headline", "tagline", "features"]
+            "required": ["headline", "tagline", "features"]
           }
         },
-        required: [
+        "required": [
           "proposalId", "styleName", "styleDescription", "position", 
-          "background", "featurePosition", "layout", "backgroundDesc", 
-          "lightingRequirements", "textRequirements", "colorTone", 
+          "background", "featurePosition", "layout", "backgroundDesc",
+          "lightingRequirements", "textRequirements", "colorTone",
           "posterSize", "overallStyle", "integrationElements", "displayedText"
         ]
-      },
-      minItems: 5,
-      maxItems: 5
+      }
     };
     
-    // 初始化文本模型，配置结构化输出
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+    // 构造元提示词
+    const metaPrompt = `作为一个专业的LED产品海报设计专家，我需要你为下面的LED灯带产品生成5套创意海报设计方案。每个方案需要详细描述海报的视觉元素、构图和风格。请确保每个方案风格各不相同，突出产品的不同卖点和使用场景。
+    
+产品信息:
+- 产品名称: "${productInfo.name}"
+- 产品特点: "${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"
+- 目标客户: "${productInfo.targetAudience || '未指定'}"
+${productInfo.sceneDescription ? `- 使用场景详细描述: "${productInfo.sceneDescription}"` : ''}
+${productInfo.posterSize ? `- 海报画幅比例: ${productInfo.posterSize}` : ''}
+
+对于每个方案，请提供以下详细信息:
+1. 独特的风格名称和简短描述，解释为什么这种风格适合此产品
+2. 明确的产品定位，说明产品在海报中的位置和占比（产品图片占海报面积15-30%，确保背景环境清晰可见）
+3. 背景环境的详细描述，包含多个视觉元素，确保背景与产品形成鲜明对比
+4. 详细的排版布局，指明每个元素的位置安排
+5. 对文字内容的明确要求，包括主标题、标语和最多3个产品特点
+   - 主标题示例："光与影的艺术"
+   - 标语示例："为生活增添色彩"
+   - 产品特点示例：["高亮度", "低能耗", "简易安装"]
+6. 产品与环境的协调方式，包括光线融合、安装位置和视觉和谐
+
+生成的方案必须遵循以下规则：
+- 每个方案都必须是独特的，有明显的风格差异
+- 所有文本必须使用中文，并用英文双引号(")包围
+- 产品图片定位明确，与背景形成自然、专业的搭配
+- 整体设计要突出产品的关键特点和使用场景
+- 确保版面布局清晰，视觉层次分明
+- 产品图片仅占画面15-30%的面积，确保背景环境清晰可见
+
+请以JSON格式返回5个方案，严格遵循提供的schema。不要添加任何其他说明或注释。`;
+
+    console.log('向Gemini发送元提示词请求...');
+    // 发送请求到Gemini API，使用systemInstruction引导输出格式
+    const result = await model.generateContent({
+      contents: [{ text: metaPrompt }],
       generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: schema
-      }
+        temperature: 1.0, // 增加多样性
+        responseValidationMode: 'SYSTEM_INSTRUCTION',
+        systemInstructions: {
+          instructions: "请以JSON数组格式返回5个海报设计方案，每个方案包含所有必需的字段。确保JSON格式正确，可以直接解析。不要添加任何解释或其他文本。"
+        }
+      },
+      safetySettings: [
+        {
+          category: "HARM_CATEGORY_HARASSMENT",
+          threshold: "BLOCK_MEDIUM_AND_ABOVE"
+        }
+      ],
+      tools: [
+        {
+          functionDeclarations: [
+            {
+              name: "generatePosterProposals",
+              description: "生成LED灯带产品的海报设计方案",
+              parameters: proposalSchema
+            }
+          ]
+        }
+      ]
     });
     
-    // 构建元提示词，指导AI生成海报方案
-    const metaPrompt = `你是一个专门为文生图大语言模型设计提示词的专家，特别是在产品商业海报的提示词编写方面。你的任务是根据用户提供的产品信息和使用场景，生成多个海报设计方案。
-
-产品信息：
-* 产品名称: "${productInfo.name}"
-* 产品特点: "${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"
-* 目标客户: "${productInfo.targetAudience || '未指定'}"
-${productInfo.sceneDescription ? `* 使用场景详细描述: "${productInfo.sceneDescription}"` : ''}
-
-为这个LED产品生成5个不同风格、不同场景的海报设计方案，每个方案都应该有独特的风格和设计理念，能够突出产品特点和适用场景。请注意，用户会上传产品图片作为海报的主体，生成方案中不需要前景描述，应该保留用户上传的图片原样作为海报主体。${productInfo.sceneDescription ? '请将用户提供的使用场景详细描述整合到你的方案中，尤其是背景描述部分。' : ''}
-
-要求每个方案都包含：
-- 独特的风格名称和简短描述
-- 产品在海报中的位置（产品图片只能占画面15-30%的面积，必须确保背景环境清晰可见）
-- 背景描述和场景设定（必须是与产品功能相关的真实应用场景）
-- 产品特点文字的位置和布局（明确描述文字的相对位置和排列方式）
-- 视觉要素（光影效果、色调、材质等，具体描述每个维度的细节）
-- 海报尺寸（只能选择16:9、9:16、1:1三种标准格式）
-- 产品与背景环境协调统一的表现：
-  * 详细描述产品发出的光线如何与背景环境融合，包括光线在表面的反射、扩散和投影效果
-  * 描述产品在场景中的具体安装位置、方式和作用，确保符合实际应用逻辑
-  * 说明产品与环境在色彩、风格和主题上如何保持统一和协调
-- 海报上显示的文字内容（这些文字必须显示在最终海报上）：
-  * 主标题文字：必须用引号包围，如"高亮度LED灯带"
-  * 标语/副标题：用引号包围，如"照亮您的世界"
-  * 产品特点：最多选择3个核心特点，每条都用引号包围，如["高显色性", "防水设计"]
-
-非常重要：
-1. 所有文字内容必须用引号包围，这样文生图模型才能正确显示文字
-2. 产品只能占据画面15-30%的面积，必须确保背景环境清晰可见且与产品形成呼应关系
-3. 海报尺寸只能从16:9、9:16、1:1三种标准格式中选择一种
-4. 每个方案的每个维度（如位置、光影、文字等）必须有具体明确的描述，不能模糊或笼统
-5. 文字部分仅包含：主标题、副标题和最多3个产品特点，不要添加其他文字内容
-
-请确保方案多样化，涵盖不同的设计风格（如现代简约、科技感、自然环保等）和不同的应用场景（家庭、商业、办公等）。每个方案的背景和产品必须有明确的视觉和功能上的关联，确保生成的海报看起来自然、专业且有说服力。`;
-
-    // 调用API生成内容
-    console.log('向Gemini发送方案生成请求...');
-    const result = await model.generateContent(metaPrompt);
+    // 提取返回的方案
+    console.log('Gemini返回结果:', result);
     
-    // 提取返回的结构化数据
-    const proposalsText = result.response.text().trim();
-    console.log('Gemini返回的结构化方案:', proposalsText);
+    let proposals;
+    try {
+      // 尝试查找工具调用结果
+      const functionResponse = result.response.candidates[0].content.parts.find(
+        part => part.functionCall && part.functionCall.name === "generatePosterProposals"
+      );
+      
+      if (functionResponse && functionResponse.functionCall && functionResponse.functionCall.args) {
+        // 直接将工具调用结果作为方案
+        proposals = functionResponse.functionCall.args;
+        console.log('从工具调用中成功解析方案');
+      } else {
+        // 如果没有工具调用结果，尝试从文本中解析JSON
+        const textPart = result.response.candidates[0].content.parts.find(part => part.text);
+        if (textPart && textPart.text) {
+          // 找到JSON部分
+          const jsonMatch = textPart.text.match(/(\[.*\])/s);
+          if (jsonMatch && jsonMatch[1]) {
+            proposals = JSON.parse(jsonMatch[1]);
+            console.log('从文本响应中成功解析方案');
+          } else {
+            // 尝试解析整个文本
+            proposals = JSON.parse(textPart.text);
+            console.log('从整个文本响应中成功解析方案');
+          }
+        } else {
+          throw new Error('未能从Gemini响应中找到有效内容');
+        }
+      }
+    } catch (parseError) {
+      console.error('解析Gemini响应失败:', parseError);
+      throw new Error('无法解析海报方案数据: ' + parseError.message);
+    }
     
-    // 解析JSON数据
-    const proposals = JSON.parse(proposalsText);
+    // 验证方案数据
+    if (!Array.isArray(proposals) || proposals.length === 0) {
+      throw new Error('生成的方案无效或为空');
+    }
     
-    // 确保所有方案中都不包含前景描述，而是使用统一表述
-    proposals.forEach(proposal => {
+    // 处理返回的方案，确保每个方案有唯一ID
+    proposals.forEach((proposal, index) => {
+      // 如果没有方案ID，生成一个
+      if (!proposal.proposalId) {
+        proposal.proposalId = `proposal_${Date.now()}_${index}`;
+      }
+      
       // 如果schema中仍包含foreground字段(为了向后兼容)，就设置为固定文本
       if (proposal.hasOwnProperty('foreground')) {
         proposal.foreground = "保留图片原样，作为海报的主体";
       }
     });
     
-    return proposals;
+    // 生成会话ID作为方案集的唯一标识符
+    const sessionId = `proposals_${Date.now()}`;
+    
+    // 将方案数据保存到数据库
+    try {
+      // 将方案保存为一个对象，包含proposals数组和创建时间
+      const proposalsData = {
+        proposals,
+        createdAt: new Date().toISOString()
+      };
+      
+      // 使用唯一的键名保存方案数据
+      const dbKey = `proposals:${sessionId}`;
+      await db.prompts.put(dbKey, proposalsData);
+      console.log('方案已保存到数据库，键名:', dbKey);
+      
+      // 同时使用不带冒号的格式保存一份作为备份
+      await db.prompts.put(sessionId, proposalsData);
+      console.log('方案已备份到数据库，键名:', sessionId);
+    } catch (dbError) {
+      console.error('保存方案到数据库失败:', dbError);
+      // 即使保存失败，也继续返回生成的方案，不阻止流程
+    }
+    
+    return { proposals, sessionId };
   } catch (error) {
     console.error('生成海报方案失败:', error.message);
     console.error('错误堆栈:', error.stack);
@@ -220,6 +295,8 @@ ${productInfo.sceneDescription ? `* 使用场景详细描述: "${productInfo.sce
 const generateFinalPromptFromProposal = async (proposal, productInfo) => {
   try {
     console.log('===== 开始基于方案生成最终提示词 =====');
+    console.log('选中的方案:', JSON.stringify(proposal));
+    console.log('产品信息:', JSON.stringify(productInfo));
     
     // 构造基本提示词基于方案中的数据
     let basePrompt = `一张"${productInfo.name}"商业海报。

@@ -415,7 +415,7 @@ export default {
       return colorTone.length > 20 ? colorTone.substring(0, 20) + '...' : colorTone;
     },
     
-    // 基于选择的方案生成海报
+    // 基于选定方案生成海报的方法
     async generatePosterFromProposal() {
       if (!this.selectedProposal) {
         this.$message.warning('请选择一个设计方案');
@@ -432,58 +432,64 @@ export default {
       this.startProgressSimulation();
       
       try {
-        // 构造生成海报的请求数据
-        const requestData = {
-          proposalId: this.selectedProposal.proposalId,
+        console.log('基于方案生成海报:', {
           sessionId: this.proposalsSessionId,
-          productInfo: {
-            name: this.productInfo.name,
-            features: Array.isArray(this.productInfo.features) 
-              ? this.productInfo.features 
-              : this.productInfo.features.split('\n').filter(f => f.trim() !== ''),
-            targetAudience: this.productInfo.targetAudience,
-            sceneDescription: this.productInfo.sceneDescription,
-            imageUrl: this.productInfo.imageUrl,
-            posterSize: this.productInfo.posterSize // 添加海报画幅信息
-          }
-        };
+          proposalId: this.selectedProposal.proposalId,
+          productInfo: this.productInfo
+        });
         
-        console.log('发送海报生成请求:', JSON.stringify(requestData, null, 2));
-        
-        // 请求生成海报
+        // 直接调用海报生成接口，传递会话ID和方案ID
         const response = await fetch('/api/posters/generate', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(requestData)
+          body: JSON.stringify({
+            sessionId: this.proposalsSessionId,
+            proposalId: this.selectedProposal.proposalId,
+            proposal: this.selectedProposal, // 直接传递整个提案对象作为备份
+            productInfo: {
+              name: this.productInfo.name,
+              features: this.productInfo.features.split('\n'),
+              targetAudience: this.productInfo.targetAudience,
+              sceneDescription: this.productInfo.sceneDescription,
+              imageUrl: this.productInfo.imageUrl,
+              posterSize: this.productInfo.posterSize
+            }
+          })
         });
         
         const result = await response.json();
         
+        // 停止进度模拟
+        clearInterval(this.progressInterval);
+        
         if (result.success) {
-          this.generatedPoster = result.posterUrl + '?t=' + new Date().getTime(); // 添加时间戳防止缓存
-          this.isBackupPoster = result.useBackup;
+          this.generatedPoster = result.posterUrl;
+          this.isBackupPoster = result.isBackup || false;
+          this.generationProgress = 100;
+          this.progressMessage = '海报生成完成!';
           
-          // 如果返回了最终提示词，更新本地提示词
+          // 更新最终使用的提示词，用于参考
           if (result.finalPrompt) {
             this.finalPrompt = result.finalPrompt;
           }
           
-          this.stopProgressSimulation(true);
-          this.$message.success(
-            this.isBackupPoster 
-              ? '海报生成失败，已使用原图作为海报' 
-              : '海报生成成功!'
-          );
+          this.$message.success('海报生成成功');
         } else {
-          this.stopProgressSimulation(false);
-          this.$message.error('海报生成失败: ' + result.message);
+          throw new Error(result.message || '海报生成失败');
         }
       } catch (error) {
-        console.error('生成海报出错:', error);
-        this.stopProgressSimulation(false);
-        this.$message.error('生成海报时发生错误，请重试');
+        console.error('生成海报失败:', error);
+        this.posterLoadError = true;
+        this.progressMessage = `生成失败: ${error.message || '未知错误'}`;
+        this.$message.error(`海报生成失败: ${error.message || '未知错误'}`);
+        
+        // 停止进度模拟
+        clearInterval(this.progressInterval);
+        this.generationProgress = 0;
+      } finally {
+        this.isGenerating = false;
       }
     },
     

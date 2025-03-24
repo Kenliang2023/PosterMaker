@@ -117,108 +117,107 @@ router.post('/generate', async (req, res) => {
       // 如果提供了方案ID和会话ID，则优先使用方案生成提示词
       if (proposalId && sessionId) {
         console.log('===== 基于选择的方案生成提示词 =====');
+        console.log(`sessionId: ${sessionId}, proposalId: ${proposalId}`);
+        
         try {
-          // 从数据库获取保存的提示词
-          const savedPrompt = await db.prompts.get(`prompt_${sessionId}_${proposalId}`);
-          if (savedPrompt && savedPrompt.finalPrompt) {
-            finalPrompt = savedPrompt.finalPrompt;
-            console.log('使用预先生成的提示词:', finalPrompt);
-          } else {
-            // 从数据库获取方案
-            try {
-              console.log('尝试使用键名:', `proposals:${sessionId}`);
-              const proposalsData = await db.prompts.get(`proposals:${sessionId}`);
+          // 首先尝试使用新格式查找最终提示词（prompt_timestamp）
+          // 这是prompt.js中保存的格式
+          const promptStorageKey = `prompt_${Date.now()}`; // 这是一个示例，我们会尝试多种键名
+          console.log(`尝试查找已保存的提示词，键名可能为: ${promptStorageKey} 或其他时间戳格式`);
+          
+          // 从proposals:sessionId获取方案数据
+          const proposalsStorageKey = `proposals:${sessionId}`;
+          console.log(`尝试从数据库获取方案数据，键名: ${proposalsStorageKey}`);
+          
+          let proposalsData;
+          try {
+            proposalsData = await db.prompts.get(proposalsStorageKey);
+            console.log(`成功获取方案数据，方案数量: ${proposalsData.proposals.length}`);
+            
+            // 查找选定的方案
+            const selectedProposal = proposalsData.proposals.find(p => p.proposalId === proposalId);
+            
+            if (selectedProposal) {
+              console.log('找到选定的方案:', selectedProposal.styleName);
               
-              // 检查数据结构，确保包含proposals数组
-              if (proposalsData && proposalsData.proposals && Array.isArray(proposalsData.proposals)) {
-                const selectedProposal = proposalsData.proposals.find(p => p.proposalId === proposalId);
-                
-                if (selectedProposal) {
-                  // 生成最终提示词
-                  finalPrompt = await geminiService.generateFinalPromptFromProposal(selectedProposal, productInfo);
-                  console.log('基于方案生成的提示词:', finalPrompt);
-                  
-                  // 保存生成的提示词供后续使用
-                  try {
-                    await db.prompts.put(`prompt_${sessionId}_${proposalId}`, {
-                      sessionId,
-                      proposalId,
-                      productInfo,
-                      finalPrompt,
-                      createdAt: new Date().toISOString()
-                    });
-                    console.log('提示词已保存到数据库');
-                  } catch (saveError) {
-                    console.error('保存提示词到数据库失败:', saveError);
-                    // 继续使用生成的提示词，但不阻止流程
-                  }
-                } else {
-                  console.log('找不到选择的方案，将使用提供的提示词');
-                }
-              } else {
-                throw new Error('proposals数据结构不正确，尝试其他方法');
-              }
-            } catch (dbError) {
-              console.error('从数据库获取方案失败:', dbError);
+              // 使用方案和产品信息生成最终提示词
+              finalPrompt = await geminiService.generateFinalPromptFromProposal(selectedProposal, productInfo);
+              console.log('基于方案生成的提示词:', finalPrompt);
               
-              // 尝试通过不同的键名格式获取方案数据
+              // 保存生成的提示词供后续使用
+              const newPromptId = `prompt_${sessionId}_${proposalId}`;
               try {
-                console.log('尝试使用不同的键名格式:', sessionId);
-                const proposalsData = await db.prompts.get(sessionId);
-                console.log('成功获取方案数据:', typeof proposalsData);
-                
-                // 检查结构，可能是直接返回了数组或包含proposals字段的对象
-                let proposals = proposalsData;
-                if (!Array.isArray(proposalsData) && proposalsData.proposals) {
-                  proposals = proposalsData.proposals;
-                }
-                
-                if (Array.isArray(proposals)) {
-                  const selectedProposal = proposals.find(p => p.proposalId === proposalId);
-                  if (selectedProposal) {
-                    // 生成最终提示词
-                    finalPrompt = await geminiService.generateFinalPromptFromProposal(selectedProposal, productInfo);
-                    console.log('基于方案生成的提示词:', finalPrompt);
-                  } else {
-                    throw new Error('找不到指定的方案');
-                  }
-                } else {
-                  throw new Error('获取的方案数据格式不正确');
-                }
-              } catch (alternativeDbError) {
-                console.error('尝试使用alternative键名也失败:', alternativeDbError);
-                console.log('尝试使用productInfo中的数据直接生成提示词');
+                await db.prompts.put(newPromptId, {
+                  id: newPromptId,
+                  sessionId,
+                  proposalId,
+                  productInfo,
+                  finalPrompt,
+                  selectedProposal,
+                  createdAt: new Date().toISOString()
+                });
+                console.log(`提示词已保存到数据库，键名: ${newPromptId}`);
+              } catch (saveError) {
+                console.error('保存提示词到数据库失败:', saveError);
+                // 继续使用生成的提示词，但不阻止流程
+              }
+            } else {
+              console.log(`在会话 ${sessionId} 中未找到方案ID ${proposalId}`);
+              throw new Error(`找不到选定的方案 (proposalId: ${proposalId})`);
+            }
+          } catch (dbError) {
+            console.error('从数据库获取方案失败:', dbError);
+            
+            // 如果是"找不到数据"错误，尝试使用原始提示词或创建备用方案
+            if (dbError.notFound || dbError.code === 'LEVEL_NOT_FOUND') {
+              console.log('数据库中找不到方案数据，尝试备用方案');
+              
+              if (prompt) {
+                console.log('使用请求中提供的原始提示词');
+                finalPrompt = prompt;
+              } else {
+                console.log('根据产品信息创建备用方案');
                 
                 // 创建一个基本方案结构用于生成提示词
-                const reconstructedProposal = {
-                  proposalId: proposalId,
-                  styleName: "重建方案",
-                  styleDescription: "基于用户选择和产品信息重建的方案",
-                  position: "画面左侧",
+                const backupProposal = {
+                  proposalId: proposalId || 'backup',
+                  styleName: "默认方案",
+                  styleDescription: "基于产品信息创建的备用方案",
+                  position: "画面中央",
                   background: productInfo.sceneDescription || "简洁专业的背景",
-                  featurePosition: "画面底部居中",
+                  featurePosition: "画面底部",
+                  layout: "产品居中，背景环绕，文字简洁",
+                  backgroundDesc: "专业商业环境",
+                  lightingRequirements: "从产品投射柔和光线",
+                  textRequirements: "中等大小，清晰易读",
+                  colorTone: "专业商业色调",
                   posterSize: productInfo.posterSize || "16:9",
+                  overallStyle: "现代专业",
                   integrationElements: {
-                    lightIntegration: "LED灯带发出的光线与背景环境和谐融合",
-                    installationContext: "安装在适合的位置，提供良好照明",
-                    visualHarmony: "产品与环境保持视觉协调，整体风格统一"
+                    lightIntegration: "LED产品的光线与环境和谐融合",
+                    installationContext: "产品安装在最佳位置，展示其功能",
+                    visualHarmony: "产品与背景在视觉上保持协调统一"
                   },
                   displayedText: {
-                    headline: `${productInfo.targetAudience || "专业"}优选${productInfo.name}`,
-                    features: Array.isArray(productInfo.features) ? productInfo.features : productInfo.features.split('\n'),
-                    tagline: "高品质照明选择"
+                    headline: productInfo.name,
+                    features: Array.isArray(productInfo.features) ? 
+                      productInfo.features.slice(0, 3) : 
+                      productInfo.features.split('\n').slice(0, 3),
+                    tagline: `${productInfo.targetAudience || "专业"}照明选择`
                   }
                 };
                 
-                // 使用重建的方案生成提示词
-                finalPrompt = await geminiService.generateFinalPromptFromProposal(reconstructedProposal, productInfo);
-                console.log('使用重建方案生成的提示词:', finalPrompt);
+                // 使用备用方案生成提示词
+                finalPrompt = await geminiService.generateFinalPromptFromProposal(backupProposal, productInfo);
+                console.log('使用备用方案生成的提示词:', finalPrompt);
               }
+            } else {
+              // 如果是其他错误，重新抛出
+              throw dbError;
             }
           }
         } catch (error) {
           console.error('获取/生成方案提示词失败:', error);
-          console.log('将使用提供的提示词');
           
           // 确保提示词不为undefined，提供默认提示词
           if (!finalPrompt) {
@@ -227,9 +226,11 @@ router.post('/generate', async (req, res) => {
 
 保留图片原样，作为海报的主体。
 
-海报的背景是简洁的，符合产品风格。
+主标题写着"${productInfo.name}"。
 
 产品特点文字位于海报底部，写着"${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"。
+
+标语文字写着"专业照明解决方案"。
 
 整体布局简约，突出产品特性。
 
@@ -239,11 +240,11 @@ router.post('/generate', async (req, res) => {
 
 色调要求：专业商业色调。
 
-海报尺寸：A3。
+海报尺寸：${productInfo.posterSize || "16:9"}。
 
 海报整体风格：现代专业。
 
-左上角品牌 LOGO 写着："RS-LED"，右下角公司网址写着"www.rs-led.com"，左下角是很小的公司二维码。`;
+左上角品牌 LOGO 写着"RS-LED"，右下角公司网址写着"www.rs-led.com"，左下角是很小的公司二维码。`;
           }
         }
       } 
@@ -271,9 +272,11 @@ router.post('/generate', async (req, res) => {
 
 保留图片原样，作为海报的主体。
 
-海报的背景是简洁的，符合产品风格。
+主标题写着"${productInfo.name}"。
 
 产品特点文字位于海报底部，写着"${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}"。
+
+标语文字写着"专业照明解决方案"。
 
 整体布局简约，突出产品特性。
 
@@ -283,11 +286,11 @@ router.post('/generate', async (req, res) => {
 
 色调要求：专业商业色调。
 
-海报尺寸：A3。
+海报尺寸：${productInfo.posterSize || "16:9"}。
 
 海报整体风格：现代专业。
 
-左上角品牌 LOGO 写着："RS-LED"，右下角公司网址写着"www.rs-led.com"，左下角是很小的公司二维码。`;
+左上角品牌 LOGO 写着"RS-LED"，右下角公司网址写着"www.rs-led.com"，左下角是很小的公司二维码。`;
       }
       
       // 确保最终提示词不为undefined

@@ -79,6 +79,22 @@
             </el-upload>
           </div>
 
+          <div class="input-card">
+            <div class="input-card-title">模型选择</div>
+            <el-radio-group v-model="useMultimodal">
+              <el-radio :label="false">文本模型</el-radio>
+              <el-radio :label="true">多模态模型(分析图片)</el-radio>
+            </el-radio-group>
+            <div class="model-description">
+              <small v-if="useMultimodal">
+                多模态模型会分析您上传的图片，并生成更匹配图片特点的设计方案
+              </small>
+              <small v-else>
+                文本模型仅基于产品文字描述生成设计方案
+              </small>
+            </div>
+          </div>
+
           <div class="form-buttons">
             <el-button type="primary" @click="generateProposals" :loading="isGeneratingProposals" :disabled="!canGenerateProposals" class="generate-btn">
               {{ isGeneratingProposals ? '正在生成方案...' : '生成海报方案' }}
@@ -98,8 +114,6 @@
         </div>
         
         <div v-if="proposals.length > 0" class="proposals-container">
-          <h4>选择设计方案</h4>
-          
           <div class="proposals-list">
             <div
               v-for="proposal in proposals"
@@ -130,6 +144,11 @@
             </div>
             
             <div v-if="generatedPoster" class="poster-result">
+              <!-- 添加产品图片预览 -->
+              <div v-if="productInfo.imageUrl" class="product-image-preview">
+                <img :src="productInfo.imageUrl" alt="产品图片" class="product-thumbnail" />
+              </div>
+              
               <img :src="displayedPoster || generatedPoster" class="poster-image" @error="handlePosterImageError" @click="enlargeImage(displayedPoster || generatedPoster)" />
               <div v-if="isBackupPoster && !displayedPoster" class="backup-notice">
                 <el-alert
@@ -145,20 +164,34 @@
                 <el-button type="info" @click="regeneratePoster" icon="RefreshRight">重新生成</el-button>
               </div>
             </div>
-          </div>
-          
-          <!-- 历史记录区域 -->
-          <div class="history-records" v-if="posterHistory.length > 0">
-            <h4>历史记录</h4>
-            <div class="history-images">
-              <div 
-                v-for="(item, index) in posterHistory" 
-                :key="index" 
-                class="history-image-item"
-                @click="showHistoryImage(item.url)"
-              >
-                <img :src="item.url" :alt="`历史海报 ${index + 1}`" class="history-image" />
-                <div class="history-image-time">{{ formatHistoryTime(item.time) }}</div>
+            
+            <!-- 历史记录区域移至结果区域内部 -->
+            <div class="history-records-horizontal" v-if="posterHistory.length > 0">
+              <div class="history-header">
+                <h4>历史记录</h4>
+                <el-tooltip content="清空历史记录" placement="top">
+                  <el-button type="danger" size="small" icon="Delete" circle @click="confirmClearHistory"></el-button>
+                </el-tooltip>
+              </div>
+              <div class="history-scroll-container">
+                <div class="history-images-horizontal">
+                  <div 
+                    v-for="(item, index) in posterHistory" 
+                    :key="index" 
+                    class="history-image-item"
+                    @click="showHistoryImage(item.url)"
+                  >
+                    <div class="history-image-container">
+                      <img :src="item.url" :alt="`历史海报 ${index + 1}`" class="history-image" />
+                      <div class="image-actions">
+                        <el-button type="danger" size="small" icon="Delete" circle @click.stop="confirmDeleteHistory(index)"></el-button>
+                      </div>
+                      <div class="image-overlay">
+                        <span class="image-text">{{ extractPosterTitle(item) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -361,11 +394,22 @@ export default {
       enlargeDialogVisible: false,
       enlargeDialogTitle: '',
       enlargeImageSrc: '',
+      useMultimodal: false,  // 默认使用文本模型
     }
   },
   mounted() {
-    // 加载历史记录
     this.loadHistory();
+    
+    // 添加滚轮横向滚动功能
+    this.$nextTick(() => {
+      this.setupHorizontalScroll();
+    });
+  },
+  updated() {
+    // 组件更新后重新设置横向滚动
+    this.$nextTick(() => {
+      this.setupHorizontalScroll();
+    });
   },
   computed: {
     // 能否生成方案的判断条件
@@ -415,7 +459,10 @@ export default {
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ productInfo: productInfoForRequest })
+          body: JSON.stringify({ 
+            productInfo: productInfoForRequest,
+            useMultimodal: this.useMultimodal  // 添加模型选择参数
+          })
         });
         
         const result = await response.json();
@@ -505,6 +552,7 @@ export default {
         
         if (result.success) {
           this.generatedPoster = result.posterUrl;
+          this.displayedPoster = result.posterUrl; // 确保立即显示生成的海报
           this.isBackupPoster = result.useBackup || false;
           this.generationProgress = 100;
           this.progressMessage = '海报生成完成!';
@@ -516,6 +564,14 @@ export default {
           if (result.finalPrompt) {
             this.finalPrompt = result.finalPrompt;
           }
+          
+          // 滚动到结果区域
+          this.$nextTick(() => {
+            const resultElement = document.querySelector('.main-result-area');
+            if (resultElement) {
+              resultElement.scrollIntoView({ behavior: 'smooth' });
+            }
+          });
           
           this.$message.success('海报生成成功');
         } else {
@@ -855,7 +911,21 @@ export default {
 
     showHistoryImage(imageUrl) {
       this.displayedPoster = imageUrl;
-      this.$message.info('显示历史海报');
+      
+      // 确保主区域显示历史图片
+      if (!this.generatedPoster) {
+        this.generatedPoster = imageUrl; // 如果当前没有生成的海报，将历史图片设为主图片
+      }
+      
+      // 滚动到结果区域
+      this.$nextTick(() => {
+        const resultElement = document.querySelector('.main-result-area');
+        if (resultElement) {
+          resultElement.scrollIntoView({ behavior: 'smooth' });
+        }
+      });
+      
+      this.$message.success('已显示历史海报');
     },
 
     formatHistoryTime(timestamp) {
@@ -870,7 +940,10 @@ export default {
       // 添加新的历史记录
       this.posterHistory.unshift({
         url: url,
-        time: new Date().getTime()
+        time: new Date().getTime(),
+        title: this.productInfo.name || "LED灯带",
+        features: this.productInfo.features,
+        style: this.selectedProposal ? this.selectedProposal.styleName : "默认风格"
       });
       
       // 限制历史记录最多显示10条
@@ -896,6 +969,79 @@ export default {
       } catch (e) {
         console.error('加载历史记录失败:', e);
       }
+    },
+
+    // 从历史记录中提取标题
+    extractPosterTitle(item) {
+      // 从海报记录中获取产品名称和风格
+      if (item.title && item.style) {
+        return item.style.length > 10 ? item.title : `${item.title} - ${item.style}`;
+      }
+      return item.title || "LED灯带";
+    },
+
+    confirmClearHistory() {
+      this.$confirm('确定要清空所有历史记录吗？此操作不可恢复。', '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).then(() => {
+        // 清空历史记录
+        this.posterHistory = [];
+        // 保存到本地存储
+        localStorage.setItem('posterHistory', JSON.stringify(this.posterHistory));
+        this.$message.success('历史记录已清空');
+      }).catch(() => {
+        this.$message.info('已取消清空操作');
+      });
+    },
+
+    confirmDeleteHistory(index) {
+      this.$confirm('确定要删除这条历史记录吗？', '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).then(() => {
+        // 删除指定索引的历史记录
+        this.posterHistory.splice(index, 1);
+        // 保存到本地存储
+        localStorage.setItem('posterHistory', JSON.stringify(this.posterHistory));
+        
+        // 如果当前显示的是被删除的历史海报，则清空显示
+        if (this.displayedPoster === this.posterHistory[index]?.url) {
+          this.displayedPoster = null;
+        }
+        
+        this.$message.success('历史记录已删除');
+      }).catch(() => {
+        this.$message.info('已取消删除操作');
+      });
+    },
+
+    setupHorizontalScroll() {
+      // 使用setTimeout确保DOM完全渲染后再添加事件监听
+      setTimeout(() => {
+        const scrollContainer = document.querySelector('.history-scroll-container');
+        if (scrollContainer) {
+          // 先移除可能存在的旧事件监听器
+          scrollContainer.removeEventListener('wheel', this.handleWheel);
+          // 添加新的事件监听器
+          scrollContainer.addEventListener('wheel', this.handleWheel);
+          console.log('滚轮事件监听器已添加');
+        } else {
+          console.warn('未找到历史记录滚动容器');
+        }
+      }, 300);
+    },
+    
+    handleWheel(e) {
+      // 阻止默认滚动行为
+      e.preventDefault();
+      // 滚动速度放大系数
+      const scrollFactor = 2;
+      // 将垂直滚动转换为水平滚动
+      const container = e.currentTarget;
+      container.scrollLeft += e.deltaY * scrollFactor;
     },
   }
 }
@@ -1012,6 +1158,7 @@ export default {
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
   padding: 1.5rem;
   transition: all 0.3s ease;
+  overflow: hidden; /* 防止内容溢出 */
 }
 
 .form-section:hover,
@@ -1062,6 +1209,25 @@ export default {
   border-color: #3b82f6;
   background-color: #ebf4ff;
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  transform: translateY(-3px);
+  position: relative;
+}
+
+.proposal-card.selected::before {
+  content: '✓';
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background-color: #3b82f6;
+  color: white;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
 }
 
 .proposal-header {
@@ -1149,6 +1315,7 @@ export default {
   max-width: 1600px;
   margin: 0 auto;
   padding: 1.5rem;
+  overflow-x: hidden; /* 防止整个页面出现横向滚动条 */
 }
 
 .poster-creation-container {
@@ -1158,28 +1325,69 @@ export default {
   margin-bottom: 1.5rem;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 992px) {
   .poster-creation-container {
-    grid-template-columns: 1fr 1fr;
+    flex-direction: column;
   }
   
-  .result-section {
-    grid-column: span 2;
+  .form-section, .prompt-section, .result-section {
+    width: 100%;
+    max-width: 100%;
   }
   
-  .prompt-section {
-    grid-column: span 1;
+  .main-result-area {
+    min-height: 450px;
+  }
+  
+  .poster-image {
+    max-height: 350px;
+  }
+  
+  .product-image-preview {
+    width: 60px;
+    height: 60px;
   }
 }
 
 @media (max-width: 768px) {
-  .poster-creation-container {
-    grid-template-columns: 1fr;
+  .history-image-item {
+    width: 100px;
   }
   
-  .prompt-section,
-  .result-section {
-    grid-column: span 1;
+  .history-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0.5rem;
+  }
+  
+  .main-result-area {
+    min-height: 400px;
+  }
+  
+  .poster-image {
+    max-height: 300px;
+  }
+}
+
+@media (max-width: 480px) {
+  .history-image-item {
+    width: 85px;
+  }
+  
+  .main-result-area {
+    min-height: 350px;
+  }
+  
+  .poster-image {
+    max-height: 250px;
+  }
+  
+  .product-image-preview {
+    width: 50px;
+    height: 50px;
+    top: 5px;
+    right: 5px;
   }
 }
 
@@ -1275,19 +1483,23 @@ export default {
 
 .poster-result {
   width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  flex: 1;
+  max-width: 100%; /* 限制最大宽度 */
+  overflow: hidden; /* 防止内容溢出 */
 }
 
 .poster-image {
   max-width: 100%;
-  max-height: 500px;
-  width: auto;
+  max-height: 380px;
   object-fit: contain;
-  margin-bottom: 1rem;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-  border-radius: 6px;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   cursor: pointer;
   transition: transform 0.3s ease;
 }
@@ -1341,68 +1553,141 @@ export default {
 
 .result-container {
   display: flex;
-  gap: 1.5rem;
-  min-height: 500px;
+  flex-direction: column;
+  height: 100%;
+  width: 100%; /* 确保宽度不超出父容器 */
+  margin-bottom: 1rem;
+  overflow: hidden; /* 防止内容溢出 */
 }
 
 .main-result-area {
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
   justify-content: center;
+  align-items: center;
+  min-height: 500px;
+  width: 100%; /* 确保宽度填满父容器 */
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: #f8fafc;
+  position: relative;
 }
 
-.history-records {
-  flex: 0 0 200px;
-  border-left: 1px solid #e2e8f0;
-  padding-left: 1rem;
+.history-records-horizontal {
+  width: 100%;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 1rem;
+  margin-top: auto;
+  background-color: #f8fafc;
+  max-width: 100%;
+  overflow: hidden;
 }
 
-.history-records h4 {
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 0 0.5rem;
+}
+
+.history-header h4 {
   font-size: 1rem;
   font-weight: 600;
-  margin-bottom: 0.75rem;
+  margin: 0;
   color: #2d3748;
-  text-align: center;
 }
 
-.history-images {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-  max-height: 500px;
-  overflow-y: auto;
-  padding-right: 0.5rem;
+.history-scroll-container {
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  padding-bottom: 0.5rem;
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: thin;  /* Firefox */
+  scroll-behavior: smooth;
+  width: 100%;
+}
+
+.history-scroll-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.history-scroll-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.history-scroll-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 3px;
+}
+
+.history-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+.history-images-horizontal {
+  display: inline-flex;
+  gap: 1rem;
+  padding: 0.5rem;
+  flex-wrap: nowrap;
 }
 
 .history-image-item {
-  border: 1px solid #e2e8f0;
+  width: 150px;
+  flex-shrink: 0;
   border-radius: 8px;
-  padding: 0.5rem;
+  overflow: hidden;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
   cursor: pointer;
-  transition: all 0.3s ease;
-  background-color: #f8fafc;
+  transition: transform 0.2s ease;
+  position: relative;
+  display: inline-block;
 }
 
 .history-image-item:hover {
-  border-color: #3b82f6;
-  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.2);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.history-image-container {
+  position: relative;
+  aspect-ratio: 1;
 }
 
 .history-image {
   width: 100%;
-  height: 100px;
+  height: 100%;
   object-fit: cover;
-  border-radius: 6px;
-  margin-bottom: 0.5rem;
 }
 
-.history-image-time {
-  font-size: 0.75rem;
-  color: #718096;
-  text-align: center;
+.image-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: none;
+  z-index: 2;
+}
+
+.history-image-item:hover .image-actions {
+  display: flex;
+}
+
+.image-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  padding: 5px 8px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .enlarge-image-container {
@@ -1418,42 +1703,28 @@ export default {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-@media (max-width: 1200px) {
-  .result-container {
-    flex-direction: column;
-  }
-  
-  .history-records {
-    flex: none;
-    border-left: none;
-    border-top: 1px solid #e2e8f0;
-    padding-left: 0;
-    padding-top: 1rem;
-    margin-top: 1rem;
-  }
-  
-  .history-images {
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: center;
-    max-height: none;
-    overflow-x: auto;
-  }
-  
-  .history-image-item {
-    width: calc(25% - 0.6rem);
-  }
+.model-description {
+  margin-top: 8px;
+  color: #606266;
+  line-height: 1.4;
 }
 
-@media (max-width: 768px) {
-  .history-image-item {
-    width: calc(33.333% - 0.6rem);
-  }
+.product-image-preview {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 80px;
+  height: 80px;
+  border-radius: 5px;
+  overflow: hidden;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  z-index: 2;
 }
 
-@media (max-width: 480px) {
-  .history-image-item {
-    width: calc(50% - 0.6rem);
-  }
+.product-thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 </style> 

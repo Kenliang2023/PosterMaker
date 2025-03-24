@@ -59,7 +59,7 @@
               :show-file-list="false"
               name="product_image"
             >
-              <img v-if="productInfo.image" :src="productInfo.image" class="uploaded-image" />
+              <img v-if="productInfo.imageUrl" :src="productInfo.imageUrl" class="uploaded-image" />
               <div v-else>
                 <el-icon><Plus /></el-icon>
                 <div class="el-upload__text">
@@ -333,12 +333,12 @@ export default {
     canGenerateProposals() {
       return this.productInfo.name && 
              this.productInfo.features && 
-             this.productInfo.image;
+             this.productInfo.imageUrl;
     },
     
     // 能否生成海报的判断条件
     canGenerate() {
-      return this.selectedProposal && this.productInfo.image;
+      return this.selectedProposal && this.productInfo.imageUrl;
     }
   },
   methods: {
@@ -366,7 +366,7 @@ export default {
           features: this.productInfo.features.split('\n'),
           targetAudience: this.productInfo.targetAudience,
           sceneDescription: this.productInfo.sceneDescription,
-          imageUrl: this.productInfo.image,
+          imageUrl: this.productInfo.imageUrl,
           posterSize: this.productInfo.posterSize // 添加海报画幅信息
         };
         
@@ -422,7 +422,7 @@ export default {
         return;
       }
       
-      if (!this.productInfo.image) {
+      if (!this.productInfo.imageUrl) {
         this.$message.warning('请上传产品图片');
         return;
       }
@@ -470,7 +470,7 @@ export default {
             features: this.productInfo.features.split('\n'),
             targetAudience: this.productInfo.targetAudience,
             sceneDescription: this.productInfo.sceneDescription,
-            imageUrl: this.productInfo.image,
+            imageUrl: this.productInfo.imageUrl,
             posterSize: this.productInfo.posterSize // 添加海报画幅信息
           }
         };
@@ -664,11 +664,12 @@ export default {
 
     // 以下为保留的原有方法
     handleImageSuccess(response) {
+      console.log('图片上传响应:', response);
       if (response.success) {
-        this.productInfo.image = response.url;
+        this.productInfo.imageUrl = response.url;
         this.$message.success('图片上传成功');
       } else {
-        this.$message.error('图片上传失败: ' + response.message);
+        this.$message.error('图片上传失败: ' + (response.message || '未知错误'));
       }
     },
     
@@ -678,13 +679,15 @@ export default {
       
       if (!isValidFormat) {
         this.$message.error('只能上传JPG或PNG图片!');
+        return false;
       }
       
       if (!isValidSize) {
         this.$message.error('图片大小不能超过5MB!');
+        return false;
       }
       
-      return isValidFormat && isValidSize;
+      return true;
     },
     
     startProgressSimulation() {

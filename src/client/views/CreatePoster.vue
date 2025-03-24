@@ -5,26 +5,29 @@
       <div class="form-section">
         <h3>产品信息</h3>
         
-        <el-form :model="productInfo" label-position="top">
-          <el-form-item label="产品名称">
+        <el-form :model="productInfo" label-position="top" class="input-form">
+          <div class="input-card">
+            <div class="input-card-title">产品名称</div>
             <el-input v-model="productInfo.name" placeholder="例如：RGB智能LED灯带"></el-input>
             <div class="quick-product-select">
               <el-button size="small" @click="selectProduct('灯带')">灯带</el-button>
               <el-button size="small" @click="selectProduct('直条灯')">直条灯</el-button>
               <el-button size="small" @click="selectProduct('广告发光模组')">广告发光模组</el-button>
             </div>
-          </el-form-item>
+          </div>
           
-          <el-form-item label="产品特点">
+          <div class="input-card">
+            <div class="input-card-title">产品特点</div>
             <el-input
               type="textarea"
               v-model="productInfo.features"
               :rows="4"
               placeholder="每行输入一个产品特点，例如：&#10;防水IP67&#10;兼容智能家居系统&#10;16百万色可调&#10;低功耗设计"
             ></el-input>
-          </el-form-item>
+          </div>
 
-          <el-form-item label="产品使用场景">
+          <div class="input-card">
+            <div class="input-card-title">产品使用场景</div>
             <div class="scene-selectors-row">
               <el-select v-model="productInfo.targetAudience" placeholder="选择使用场景" class="half-width-select">
                 <el-option label="工程项目" value="工程项目"></el-option>
@@ -39,18 +42,20 @@
                 <el-option label="方形 (1:1)" value="1:1"></el-option>
               </el-select>
             </div>
-          </el-form-item>
+          </div>
           
-          <el-form-item label="使用场景详细描述">
+          <div class="input-card">
+            <div class="input-card-title">使用场景详细描述</div>
             <el-input
               type="textarea"
               v-model="productInfo.sceneDescription"
               :rows="3"
               placeholder="描述产品的具体使用场景，例如：'智能办公室照明系统'"
             ></el-input>
-          </el-form-item>
+          </div>
           
-          <el-form-item label="产品图片">
+          <div class="input-card">
+            <div class="input-card-title">产品图片</div>
             <el-upload
               class="product-image-uploader"
               action="/api/posters/upload-image"
@@ -72,14 +77,14 @@
                 </div>
               </template>
             </el-upload>
-          </el-form-item>
+          </div>
 
-          <el-form-item>
+          <div class="form-buttons">
             <el-button type="primary" @click="generateProposals" :loading="isGeneratingProposals" :disabled="!canGenerateProposals" class="generate-btn">
               {{ isGeneratingProposals ? '正在生成方案...' : '生成海报方案' }}
             </el-button>
             <el-button @click="resetForm">重置</el-button>
-          </el-form-item>
+          </div>
         </el-form>
       </div>
       
@@ -104,23 +109,12 @@
             >
               <div class="proposal-header">
                 <span class="proposal-title">{{ proposal.styleName }}</span>
-                </div>
+              </div>
               <div class="proposal-description">
                 {{ proposal.styleDescription }}
-                </div>
-              <div class="proposal-details">
-                <div class="proposal-detail">
-                  <strong>风格:</strong> {{ proposal.overallStyle }}
               </div>
-                <div class="proposal-detail">
-                  <strong>场景:</strong> {{ getBriefBackground(proposal.background) }}
-                </div>
-                <div class="proposal-detail">
-                  <strong>色调:</strong> {{ getBriefColorTone(proposal.colorTone) }}
-                </div>
             </div>
           </div>
-        </div>
         </div>
       </div>
       
@@ -128,24 +122,45 @@
       <div class="result-section">
         <h3>生成结果</h3>
         
-        <div v-if="!generatedPoster && !isGenerating" class="empty-result">
-          <el-empty description="选择设计方案并点击生成海报按钮"></el-empty>
-        </div>
-        
-        <div v-if="generatedPoster" class="poster-result">
-          <img :src="generatedPoster" class="poster-image" @error="handlePosterImageError" />
-          <div v-if="isBackupPoster" class="backup-notice">
-            <el-alert
-              title="使用备用方案"
-              type="warning"
-              :closable="false"
-              description="AI海报生成失败，显示的是原始图片。您可以尝试重新生成或调整提示词。"
-            >
-            </el-alert>
+        <div class="result-container">
+          <!-- 主结果显示区域 -->
+          <div class="main-result-area">
+            <div v-if="!generatedPoster && !isGenerating" class="empty-result">
+              <el-empty description="选择设计方案并点击生成海报按钮"></el-empty>
+            </div>
+            
+            <div v-if="generatedPoster" class="poster-result">
+              <img :src="displayedPoster || generatedPoster" class="poster-image" @error="handlePosterImageError" @click="enlargeImage(displayedPoster || generatedPoster)" />
+              <div v-if="isBackupPoster && !displayedPoster" class="backup-notice">
+                <el-alert
+                  title="使用备用方案"
+                  type="warning"
+                  :closable="false"
+                  description="AI海报生成失败，显示的是原始图片。您可以尝试重新生成或调整提示词。"
+                >
+                </el-alert>
+              </div>
+              <div class="poster-actions">
+                <el-button type="success" @click="downloadPoster" icon="Download">下载海报</el-button>
+                <el-button type="info" @click="regeneratePoster" icon="RefreshRight">重新生成</el-button>
+              </div>
+            </div>
           </div>
-          <div class="poster-actions">
-            <el-button type="success" @click="downloadPoster" icon="Download">下载海报</el-button>
-            <el-button type="info" @click="regeneratePoster" icon="RefreshRight">重新生成</el-button>
+          
+          <!-- 历史记录区域 -->
+          <div class="history-records" v-if="posterHistory.length > 0">
+            <h4>历史记录</h4>
+            <div class="history-images">
+              <div 
+                v-for="(item, index) in posterHistory" 
+                :key="index" 
+                class="history-image-item"
+                @click="showHistoryImage(item.url)"
+              >
+                <img :src="item.url" :alt="`历史海报 ${index + 1}`" class="history-image" />
+                <div class="history-image-time">{{ formatHistoryTime(item.time) }}</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -272,6 +287,21 @@
         </span>
       </template>
     </el-dialog>
+
+    <!-- 图片放大弹窗 -->
+    <el-dialog
+      v-model="enlargeDialogVisible"
+      :title="enlargeDialogTitle"
+      width="80%"
+      center
+      :close-on-click-modal="true"
+      :close-on-press-escape="true"
+      :show-close="true"
+    >
+      <div class="enlarge-image-container">
+        <img :src="enlargeImageSrc" class="enlarged-image" />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -326,7 +356,16 @@ export default {
       promptDialogVisible: false,
       dialogPromptTitle: '',
       dialogPromptContent: '',
+      displayedPoster: null,
+      posterHistory: [],
+      enlargeDialogVisible: false,
+      enlargeDialogTitle: '',
+      enlargeImageSrc: '',
     }
+  },
+  mounted() {
+    // 加载历史记录
+    this.loadHistory();
   },
   computed: {
     // 能否生成方案的判断条件
@@ -469,6 +508,9 @@ export default {
           this.isBackupPoster = result.useBackup || false;
           this.generationProgress = 100;
           this.progressMessage = '海报生成完成!';
+          
+          // 添加到历史记录
+          this.addToHistory(result.posterUrl);
           
           // 更新最终使用的提示词，用于参考
           if (result.finalPrompt) {
@@ -805,6 +847,56 @@ export default {
         this.generatePosterFromProposal();
       }
     },
+
+    enlargeImage(imageUrl) {
+      this.enlargeImageSrc = imageUrl;
+      this.enlargeDialogVisible = true;
+    },
+
+    showHistoryImage(imageUrl) {
+      this.displayedPoster = imageUrl;
+      this.$message.info('显示历史海报');
+    },
+
+    formatHistoryTime(timestamp) {
+      const date = new Date(timestamp);
+      return date.toLocaleString();
+    },
+
+    // 添加到历史记录
+    addToHistory(url) {
+      if (!url) return;
+      
+      // 添加新的历史记录
+      this.posterHistory.unshift({
+        url: url,
+        time: new Date().getTime()
+      });
+      
+      // 限制历史记录最多显示10条
+      if (this.posterHistory.length > 10) {
+        this.posterHistory = this.posterHistory.slice(0, 10);
+      }
+      
+      // 保存到本地存储
+      try {
+        localStorage.setItem('posterHistory', JSON.stringify(this.posterHistory));
+      } catch (e) {
+        console.error('保存历史记录失败:', e);
+      }
+    },
+
+    // 加载历史记录
+    loadHistory() {
+      try {
+        const history = localStorage.getItem('posterHistory');
+        if (history) {
+          this.posterHistory = JSON.parse(history);
+        }
+      } catch (e) {
+        console.error('加载历史记录失败:', e);
+      }
+    },
   }
 }
 </script>
@@ -818,6 +910,40 @@ export default {
 
 .el-form-item:hover {
   transform: translateY(-2px);
+}
+
+.input-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.input-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 1rem;
+  transition: all 0.3s ease;
+  background-color: #f8fafc;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.input-card:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+  transform: translateY(-3px);
+}
+
+.input-card-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: #1a56db;
+  margin-bottom: 0.8rem;
+}
+
+.form-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
 }
 
 .el-input,
@@ -910,44 +1036,49 @@ export default {
 .proposals-list {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.8rem;
   margin-bottom: 1rem;
+  max-width: 300px;
+  margin: 0 auto;
 }
 
 .proposal-card {
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 1rem;
+  border-radius: 16px;
+  padding: 0.8rem;
   cursor: pointer;
   transition: all 0.3s ease;
   background-color: #f8fafc;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .proposal-card:hover {
   border-color: #3b82f6;
-  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+  transform: translateY(-3px);
 }
 
 .proposal-card.selected {
   border-color: #3b82f6;
   background-color: #ebf4ff;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 }
 
 .proposal-header {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.4rem;
 }
 
 .proposal-title {
   font-weight: 600;
-  font-size: 1.1rem;
+  font-size: 1rem;
   color: #1a56db;
 }
 
 .proposal-description {
   color: #4a5568;
-  margin-bottom: 0.75rem;
-  font-size: 0.9rem;
+  margin-bottom: 0;
+  font-size: 0.85rem;
+  line-height: 1.3;
 }
 
 .proposal-details {
@@ -1015,15 +1146,15 @@ export default {
 
 /* 保留和修改原有样式 */
 .create-poster {
-  max-width: 1400px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 1.5rem;
 }
 
 .poster-creation-container {
   display: grid;
-  grid-template-columns: 0.7fr 0.8fr 1.5fr;
-  gap: 1rem;
+  grid-template-columns: 0.9fr 0.9fr 2fr;
+  gap: 1.2rem;
   margin-bottom: 1.5rem;
 }
 
@@ -1143,22 +1274,26 @@ export default {
 }
 
 .poster-result {
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  height: 100%;
-  min-height: 300px;
-  width: 100%;
 }
 
 .poster-image {
   max-width: 100%;
-  min-height: 300px;
-  max-height: 600px;
+  max-height: 500px;
   width: auto;
   object-fit: contain;
-  margin-bottom: 0.75rem;
-  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.08);
+  margin-bottom: 1rem;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform 0.3s ease;
+}
+
+.poster-image:hover {
+  transform: scale(1.02);
 }
 
 .poster-actions {
@@ -1202,5 +1337,123 @@ export default {
   text-align: left;
   font-size: 0.9rem;
   color: #374151;
+}
+
+.result-container {
+  display: flex;
+  gap: 1.5rem;
+  min-height: 500px;
+}
+
+.main-result-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.history-records {
+  flex: 0 0 200px;
+  border-left: 1px solid #e2e8f0;
+  padding-left: 1rem;
+}
+
+.history-records h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: #2d3748;
+  text-align: center;
+}
+
+.history-images {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  max-height: 500px;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.history-image-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.5rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background-color: #f8fafc;
+}
+
+.history-image-item:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.2);
+  transform: translateY(-2px);
+}
+
+.history-image {
+  width: 100%;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.history-image-time {
+  font-size: 0.75rem;
+  color: #718096;
+  text-align: center;
+}
+
+.enlarge-image-container {
+  padding: 16px;
+  text-align: center;
+}
+
+.enlarged-image {
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+@media (max-width: 1200px) {
+  .result-container {
+    flex-direction: column;
+  }
+  
+  .history-records {
+    flex: none;
+    border-left: none;
+    border-top: 1px solid #e2e8f0;
+    padding-left: 0;
+    padding-top: 1rem;
+    margin-top: 1rem;
+  }
+  
+  .history-images {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-height: none;
+    overflow-x: auto;
+  }
+  
+  .history-image-item {
+    width: calc(25% - 0.6rem);
+  }
+}
+
+@media (max-width: 768px) {
+  .history-image-item {
+    width: calc(33.333% - 0.6rem);
+  }
+}
+
+@media (max-width: 480px) {
+  .history-image-item {
+    width: calc(50% - 0.6rem);
+  }
 }
 </style> 

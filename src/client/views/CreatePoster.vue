@@ -823,6 +823,90 @@ export default {
 </script>
 
 <style>
+/* 添加卡片样式和动态效果 */
+.el-form-item {
+  margin-bottom: 1.5rem;
+  transition: all 0.3s ease;
+}
+
+.el-form-item:hover {
+  transform: translateY(-2px);
+}
+
+.el-input,
+.el-textarea__inner,
+.el-select,
+.product-image-uploader {
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  border-radius: 8px !important;
+  transition: all 0.3s ease;
+}
+
+.el-input:hover,
+.el-textarea__inner:hover,
+.el-select:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.el-input:focus,
+.el-textarea__inner:focus,
+.el-select:focus {
+  box-shadow: 0 4px 12px rgba(26, 86, 219, 0.15);
+  border-color: #1a56db !important;
+}
+
+/* 修改下拉选择框样式 */
+.scene-selectors-row {
+  display: flex;
+  gap: 15px;
+  width: 100%;
+}
+
+.half-width-select {
+  flex: 1;
+  width: 100% !important;
+}
+
+.el-select {
+  width: 100%;
+}
+
+.el-select__tags {
+  max-width: calc(100% - 30px);
+}
+
+.el-select-dropdown {
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.el-select-dropdown__item {
+  padding: 10px 20px;
+}
+
+.el-select-dropdown__item.selected {
+  color: #1a56db;
+  font-weight: 600;
+  background-color: #f0f5ff;
+}
+
+/* 卡片式布局 */
+.form-section,
+.prompt-section,
+.result-section {
+  background-color: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+  padding: 1.5rem;
+  transition: all 0.3s ease;
+}
+
+.form-section:hover,
+.prompt-section:hover,
+.result-section:hover {
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+}
+
 /* 添加方案选择相关样式 */
 .quick-product-select {
   display: flex;
@@ -981,15 +1065,6 @@ export default {
   }
 }
 
-.form-section,
-.prompt-section,
-.result-section {
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  padding: 1rem;
-}
-
 .form-section h3,
 .prompt-section h3,
 .result-section h3 {
@@ -1140,14 +1215,5 @@ export default {
   text-align: left;
   font-size: 0.9rem;
   color: #374151;
-}
-
-.scene-selectors-row {
-  display: flex;
-  gap: 10px;
-}
-
-.half-width-select {
-  width: 50%;
 }
 </style> 

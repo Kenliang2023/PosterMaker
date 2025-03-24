@@ -230,7 +230,7 @@ const generateFinalPromptFromProposal = async (proposal, productInfo) => {
 
 主标题写着"${proposal.displayedText.headline || productInfo.name}"。
 
-产品特点文字位于${proposal.featurePosition}，写着"${Array.isArray(proposal.displayedText.features) ? proposal.displayedText.features.map(feature => `${feature}`).join('、') : `${proposal.displayedText.features}`}"。
+产品特点文字位于${proposal.featurePosition}，写着"${Array.isArray(proposal.displayedText.features) ? proposal.displayedText.features.join('、') : proposal.displayedText.features}"。
 
 标语文字写着"${proposal.displayedText.tagline}"。
 
@@ -278,13 +278,13 @@ ${productInfo.sceneDescription ? `* 使用场景详细描述: "${productInfo.sce
 5. 保留元素顺序和结构
 6. 必须严格使用英文引号(")而非中文引号("")来包围所有文字内容
 7. 必须严格保留以下关键元素，不得修改：
-   - 主标题必须保持使用"写着"XXX""的格式，并确保主标题内容为"${proposal.displayedText.headline || productInfo.name}"
-   - 产品特点文字必须保持使用"写着"XXX""的格式，内容保持不变
-   - 标语文字必须保持使用"写着"XXX""的格式，内容保持不变
-   - 左上角品牌LOGO必须使用"写着"RS-LED""的格式
-   - 右下角网址必须使用"写着"www.rs-led.com""的格式
+   - 主标题必须使用格式：写着"${proposal.displayedText.headline || productInfo.name}"，不要添加任何单引号
+   - 产品特点文字必须使用格式：写着"${Array.isArray(proposal.displayedText.features) ? proposal.displayedText.features.join('、') : proposal.displayedText.features}"，不要添加任何单引号
+   - 标语文字必须使用格式：写着"${proposal.displayedText.tagline}"，不要添加任何单引号
+   - 左上角品牌LOGO必须使用格式：写着"RS-LED"，不要添加任何单引号
+   - 右下角网址必须使用格式：写着"www.rs-led.com"，不要添加任何单引号
    - 左下角的公司二维码必须保留
-8. 非常重要：确保每种文字元素（主标题、产品特点、标语）的"写着"XXX""格式在最终提示词中只出现一次
+8. 非常重要：确保每种文字元素（主标题、产品特点、标语）的写着"XXX"格式在最终提示词中只出现一次，不要使用任何单引号
 9. 重要：保留图片原样作为海报主体，不要描述前景内容。图片将由用户上传提供，不需要生成模型创建。
 
 请直接返回优化后的完整提示词，不要包含任何解释或其他内容。所有引号都必须使用英文引号。`;

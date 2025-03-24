@@ -462,11 +462,11 @@ export default {
         const result = await response.json();
         
         // 停止进度模拟
-        clearInterval(this.progressInterval);
+        this.stopProgressSimulation(true);
         
         if (result.success) {
           this.generatedPoster = result.posterUrl;
-          this.isBackupPoster = result.isBackup || false;
+          this.isBackupPoster = result.useBackup || false;
           this.generationProgress = 100;
           this.progressMessage = '海报生成完成!';
           
@@ -486,8 +486,7 @@ export default {
         this.$message.error(`海报生成失败: ${error.message || '未知错误'}`);
         
         // 停止进度模拟
-        clearInterval(this.progressInterval);
-        this.generationProgress = 0;
+        this.stopProgressSimulation(false);
       } finally {
         this.isGenerating = false;
       }
@@ -691,6 +690,7 @@ export default {
       // 清除可能存在的旧计时器
       if (this.progressInterval) {
         clearInterval(this.progressInterval);
+        this.progressInterval = null;
       }
       
       // 模拟生成进度
@@ -726,6 +726,7 @@ export default {
     },
     
     stopProgressSimulation(success = true) {
+      // 确保清除计时器
       if (this.progressInterval) {
         clearInterval(this.progressInterval);
         this.progressInterval = null;

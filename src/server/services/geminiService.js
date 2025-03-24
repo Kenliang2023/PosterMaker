@@ -253,7 +253,7 @@ const generateFinalPromptFromProposal = async (proposal, productInfo) => {
 - 安装位置：${proposal.integrationElements.installationContext || '未指定'}
 - 视觉和谐：${proposal.integrationElements.visualHarmony || '未指定'}
 
-左上角品牌 LOGO 写着："RS-LED"，右下角公司网址写着"www.rs-led.com"，左下角是很小的公司二维码。`;
+左上角品牌 LOGO 写着：\\"RS-LED\\"，右下角公司网址写着\\"www.rs-led.com\\"，左下角是很小的公司二维码。`;
 
     // 初始化文本模型
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
@@ -300,8 +300,8 @@ ${productInfo.sceneDescription ? `* 使用场景详细描述: "${productInfo.sce
     const keyElements = [
       { key: `"${productInfo.name}"`, fallback: `一张"${productInfo.name}"商业海报` },
       { key: `${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}`, fallback: `产品特点：${Array.isArray(productInfo.features) ? productInfo.features.join('、') : productInfo.features}` },
-      { key: "RS-LED", fallback: "左上角品牌 LOGO 写着："RS-LED"" },
-      { key: "www.rs-led.com", fallback: "右下角公司网址写着"www.rs-led.com"" },
+      { key: "RS-LED", fallback: "左上角品牌 LOGO 写着：\"RS-LED\"" },
+      { key: "www.rs-led.com", fallback: "右下角公司网址写着\"www.rs-led.com\"" },
       { key: "左下角是很小的公司二维码", fallback: "左下角是很小的公司二维码" }
     ];
     

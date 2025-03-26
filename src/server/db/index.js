@@ -1,22 +1,26 @@
 const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
+const { DB_CONFIG, ensureDir, DB_DIR, VERBOSE } = require('../config');
 
 // 确保数据库目录存在
-const storageBase = process.env.STORAGE_DIR || '/tmp';
-const dbPath = path.join(storageBase, 'db');
-if (!fs.existsSync(dbPath)) {
-  fs.mkdirSync(dbPath, { recursive: true });
-  console.log(`创建数据库目录: ${dbPath}`);
-}
+const dbDir = ensureDir(DB_DIR);
 
 // 初始化数据库连接
-const dbFile = path.join(dbPath, 'postermaker.sqlite');
-console.log('数据库文件路径:', dbFile);
+console.log('数据库文件路径:', DB_CONFIG.file);
 
-const db = new Database(dbFile, {
-  verbose: process.env.NODE_ENV === 'development' ? console.log : null
-});
+let db;
+try {
+  db = new Database(DB_CONFIG.file, {
+    verbose: DB_CONFIG.verbose ? console.log : null
+  });
+  console.log('数据库连接成功');
+} catch (error) {
+  console.error('数据库连接失败:', error.message);
+  console.warn('将使用内存数据库作为备用');
+  // 使用内存数据库作为备用
+  db = new Database(':memory:', {
+    verbose: DB_CONFIG.verbose ? console.log : null
+  });
+}
 
 // 创建数据表
 const initDatabase = () => {
@@ -63,14 +67,25 @@ const initDatabase = () => {
     `
   };
 
-  for (const [tableName, schema] of Object.entries(tables)) {
-    db.exec(schema);
-    console.log(`确保数据表存在: ${tableName}`);
+  try {
+    for (const [tableName, schema] of Object.entries(tables)) {
+      db.exec(schema);
+      if (VERBOSE) {
+        console.log(`确保数据表存在: ${tableName}`);
+      }
+    }
+    return true;
+  } catch (error) {
+    console.error('初始化数据表失败:', error.message);
+    return false;
   }
 };
 
 // 初始化数据库表
-initDatabase();
+const dbInitialized = initDatabase();
+if (!dbInitialized) {
+  console.warn('数据库初始化失败，应用可能无法正常工作');
+}
 
 // 创建数据库操作接口
 const createDbInterface = (tableName) => {

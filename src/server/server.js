@@ -7,12 +7,16 @@ const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 require('dotenv').config();
 
+// 加载配置
+const config = require('./config');
+config.initDirs(); // 初始化所有目录
+
 // 初始化数据库连接
 const db = require('./db');
 
 // 创建Express应用
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = config.PORT;
 
 // 中间件配置
 app.use(cors());
@@ -22,7 +26,7 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 // 配置文件上传
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, path.join(process.env.STORAGE_DIR || '/tmp', 'uploads'));
+    cb(null, config.UPLOADS_DIR);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -32,43 +36,21 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// 确保必要的目录存在
-const storageBase = process.env.STORAGE_DIR || '/tmp';
-const uploadsDir = path.join(storageBase, 'uploads');
-const imagesDir = path.join(uploadsDir, 'images');
-const postersDir = path.join(uploadsDir, 'posters');
-const dbDir = path.join(storageBase, 'db');
-
-// 创建目录函数
-const ensureDir = (dirPath) => {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-    console.log(`创建目录: ${dirPath}`);
-  }
-};
-
-// 确保必要的目录存在
-ensureDir(uploadsDir);
-ensureDir(imagesDir);
-ensureDir(postersDir);
-ensureDir(dbDir);
-
 // 配置静态文件服务
-app.use('/uploads', express.static(uploadsDir));
-app.use('/public', express.static(path.join(__dirname, '../../public')));
+app.use('/uploads', express.static(config.UPLOADS_DIR));
+app.use('/public', express.static(config.PUBLIC_DIR));
 
 // API路由
 const apiRoutes = require('./routes');
 app.use('/api', apiRoutes);
 
 // 静态文件服务 - 前端应用
-const distPath = path.join(__dirname, '../../dist');
-if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
+if (fs.existsSync(config.DIST_DIR)) {
+  app.use(express.static(config.DIST_DIR));
   
   // 所有其他请求返回Vue应用
   app.get('*', (req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
+    res.sendFile(path.join(config.DIST_DIR, 'index.html'));
   });
 } else {
   console.warn('警告: dist目录不存在，前端资源可能未构建');
@@ -83,31 +65,37 @@ app.use((err, req, res, next) => {
   console.error('服务器错误:', err);
   res.status(500).json({ 
     error: '服务器内部错误',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
+    message: config.isProduction ? undefined : err.message
   });
 });
 
 // 启动服务器
 app.listen(PORT, async () => {
   console.log(`服务器运行在 http://localhost:${PORT}`);
-  console.log('环境:', process.env.NODE_ENV);
-  console.log('存储目录:', storageBase);
+  console.log('环境:', config.NODE_ENV);
+  console.log('存储目录:', config.STORAGE_DIR);
   
   // 初始化默认模板
   try {
     // 检查是否已经初始化
     let initStatus;
+    let needInit = false;
+    
     try {
       initStatus = await db.prompts.get('prompt-template:init-status');
+      console.log('模板初始化状态:', initStatus.initialized ? '已初始化' : '未初始化');
     } catch (error) {
       if (error.notFound) {
-        initStatus = { initialized: false };
+        console.log('未找到模板初始化状态，将进行初始化');
+        needInit = true;
       } else {
-        throw error;
+        console.error('检查模板初始化状态时出错:', error.message);
+        // 继续执行，默认需要初始化
+        needInit = true;
       }
     }
 
-    if (!initStatus.initialized) {
+    if (needInit || (initStatus && !initStatus.initialized)) {
       console.log('开始初始化默认模板...');
       
       // 初始化产品海报模板
@@ -180,21 +168,38 @@ app.listen(PORT, async () => {
         }
       ];
 
+      let successCount = 0;
       // 保存默认模板
       for (const template of defaultTemplates) {
-        await db.prompts.put(`product-template:${template.templateId}`, template);
+        try {
+          await db.prompts.put(`product-template:${template.templateId}`, template);
+          successCount++;
+        } catch (error) {
+          console.error(`保存模板失败 (${template.templateId}):`, error.message);
+        }
       }
       
       // 更新初始化状态
-      await db.prompts.put('prompt-template:init-status', { initialized: true });
-      
-      console.log('默认模板初始化完成。');
+      try {
+        await db.prompts.put('prompt-template:init-status', { 
+          initialized: true,
+          count: successCount,
+          timestamp: new Date().toISOString()
+        });
+        console.log(`默认模板初始化完成，成功添加${successCount}个模板`);
+      } catch (error) {
+        console.error('更新模板初始化状态失败:', error.message);
+      }
     } else {
-      console.log('默认模板已初始化，跳过。');
+      console.log('默认模板已初始化，跳过');
     }
   } catch (error) {
-    console.error('初始化默认模板失败:', error);
+    console.error('初始化默认模板过程中发生错误:', error);
+    // 模板初始化失败不应该影响服务器启动
+    console.log('继续启动服务器...');
   }
+  
+  console.log('服务器初始化完成，等待接收请求...');
 });
 
 module.exports = app; 

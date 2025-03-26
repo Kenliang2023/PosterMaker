@@ -3,11 +3,15 @@
   "version": "1.0.0",
   "description": "一个帮助LED灯带产品制造商快速生成专业营销海报的应用工具。",
   "main": "src/server/server.js",
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "scripts": {
     "dev-vite": "vite",
     "dev-server": "nodemon src/server/server.js",
     "dev": "concurrently \"npm run dev-vite\" \"npm run dev-server\"",
     "build": "vite build",
+    "build:render": "npm install && vite build",
     "start": "node src/server/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

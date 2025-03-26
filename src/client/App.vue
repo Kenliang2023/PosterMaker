@@ -2,7 +2,6 @@
   <div class="app-container">
     <header class="app-header">
       <div class="logo-container">
-        <img src="/RSLOGO.png" alt="RSLOGO" class="app-logo" />
         <h1>LED灯带产品海报生成</h1>
       </div>
       <div v-if="isLoggedIn" class="nav-links">
@@ -146,11 +145,6 @@ export default {
   color: #1a56db;
   font-size: 1.2rem;
   margin: 0;
-}
-
-.app-logo {
-  height: 30px;
-  margin-right: 1rem;
 }
 
 .nav-links {

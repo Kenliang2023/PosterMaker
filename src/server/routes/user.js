@@ -54,9 +54,11 @@ router.post('/register', async (req, res) => {
 // 用户登录
 router.post('/login', async (req, res) => {
   try {
+    console.log('收到登录请求:', req.body);
     const { username, password } = req.body;
 
     if (!username || !password) {
+      console.log('登录失败: 用户名或密码为空');
       return res.status(400).json({ 
         success: false,
         message: '用户名和密码不能为空' 
@@ -64,11 +66,14 @@ router.post('/login', async (req, res) => {
     }
 
     try {
+      console.log('查询用户:', username);
       const userData = await db.users.get(`user_${username}`);
+      console.log('找到用户:', { ...userData, password: '[HIDDEN]' });
       
       if (userData.password === password) {
         // 登录成功，返回用户信息（不包含密码）
         const { password: _, ...userDataWithoutPassword } = userData;
+        console.log('登录成功:', userDataWithoutPassword);
         
         res.json({
           success: true,
@@ -76,6 +81,7 @@ router.post('/login', async (req, res) => {
           user: userDataWithoutPassword
         });
       } else {
+        console.log('登录失败: 密码错误');
         res.status(401).json({
           success: false,
           message: '密码错误'
@@ -83,11 +89,13 @@ router.post('/login', async (req, res) => {
       }
     } catch (error) {
       if (error.notFound) {
+        console.log('登录失败: 用户不存在');
         res.status(404).json({
           success: false,
           message: '用户不存在'
         });
       } else {
+        console.error('登录时数据库查询失败:', error);
         throw error;
       }
     }
@@ -95,7 +103,8 @@ router.post('/login', async (req, res) => {
     console.error('登录失败:', error);
     res.status(500).json({
       success: false,
-      message: '登录失败，请稍后重试'
+      message: '登录失败，请稍后重试',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
@@ -249,12 +258,16 @@ router.get('/:username/history', async (req, res) => {
 // 初始化管理员账户
 router.get('/init-admin', async (req, res) => {
   try {
+    console.log('开始初始化管理员账户...');
     const adminUsername = 'admin';
     const adminPassword = 'admin123'; // 实际应用中应使用更强的密码并哈希
     
     // 检查是否已存在管理员账户
     try {
+      console.log('检查管理员账户是否存在...');
       const existingAdmin = await db.users.get(`user_${adminUsername}`);
+      console.log('找到已存在的管理员账户:', { ...existingAdmin, password: '[HIDDEN]' });
+      
       return res.json({
         success: true,
         message: '管理员账户已存在',
@@ -266,9 +279,11 @@ router.get('/init-admin', async (req, res) => {
       });
     } catch (error) {
       if (!error.notFound) {
+        console.error('检查管理员账户时发生错误:', error);
         throw error;
       }
       
+      console.log('管理员账户不存在，开始创建...');
       // 创建管理员账户
       const adminData = {
         id: `user_${adminUsername}`,
@@ -282,6 +297,7 @@ router.get('/init-admin', async (req, res) => {
       };
       
       await db.users.put(`user_${adminUsername}`, adminData);
+      console.log('管理员账户创建成功');
       
       res.json({
         success: true,
@@ -295,7 +311,11 @@ router.get('/init-admin', async (req, res) => {
     }
   } catch (error) {
     console.error('初始化管理员账户失败:', error);
-    res.status(500).json({ error: '初始化管理员账户失败' });
+    res.status(500).json({ 
+      success: false,
+      message: '初始化管理员账户失败',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 

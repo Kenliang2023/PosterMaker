@@ -30,6 +30,46 @@ const isAdmin = async (req, res, next) => {
   }
 };
 
+// 检查管理员认证状态
+router.get('/check-auth', async (req, res) => {
+  try {
+    const { username } = req.query;
+    if (!username) {
+      return res.status(401).json({ 
+        success: false,
+        isAdmin: false,
+        message: '未提供用户信息' 
+      });
+    }
+
+    try {
+      const userData = await db.users.get(`user_${username}`);
+      
+      res.json({
+        success: true,
+        isAdmin: userData.role === 'admin',
+        username: userData.username
+      });
+    } catch (error) {
+      if (error.notFound) {
+        return res.json({ 
+          success: false,
+          isAdmin: false,
+          message: '用户不存在' 
+        });
+      }
+      throw error;
+    }
+  } catch (error) {
+    console.error('检查管理员权限失败:', error);
+    res.json({ 
+      success: false,
+      isAdmin: false,
+      message: '检查管理员权限失败' 
+    });
+  }
+});
+
 // 获取系统统计数据
 router.get('/stats', isAdmin, async (req, res) => {
   try {

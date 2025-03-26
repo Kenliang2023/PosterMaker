@@ -7,14 +7,18 @@ export default defineConfig({
   plugins: [vue()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src/client')
+      '@': path.resolve(__dirname, './src')
     }
   },
   server: {
     proxy: {
       // 将API请求代理到Express服务器
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:3001',
+        changeOrigin: true
+      },
+      '/uploads': {
+        target: 'http://localhost:3001',
         changeOrigin: true
       }
     }

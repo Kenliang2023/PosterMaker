@@ -3,7 +3,8 @@ const path = require('path');
 const fs = require('fs');
 
 // 确保数据库目录存在
-const dbPath = path.join(__dirname, '../../../data');
+const storageBase = process.env.STORAGE_DIR || '/tmp';
+const dbPath = path.join(storageBase, 'db');
 if (!fs.existsSync(dbPath)) {
   fs.mkdirSync(dbPath, { recursive: true });
   console.log(`创建数据库目录: ${dbPath}`);
@@ -11,7 +12,11 @@ if (!fs.existsSync(dbPath)) {
 
 // 初始化数据库连接
 const dbFile = path.join(dbPath, 'postermaker.sqlite');
-const db = new Database(dbFile);
+console.log('数据库文件路径:', dbFile);
+
+const db = new Database(dbFile, {
+  verbose: process.env.NODE_ENV === 'development' ? console.log : null
+});
 
 // 创建数据表
 const initDatabase = () => {

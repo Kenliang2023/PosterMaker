@@ -8,21 +8,42 @@ const routes = [
     component: Home
   },
   {
+    path: '/login',
+    name: 'Login',
+    component: () => import('../views/Login.vue')
+  },
+  {
     path: '/create',
     name: 'Create',
     // 使用懒加载以提高初始加载性能
-    component: () => import('../views/CreatePoster.vue')
+    component: () => import('../views/CreatePoster.vue'),
+    meta: {
+      requiresAuth: true
+    }
   },
   {
     path: '/history',
     name: 'History',
-    component: () => import('../views/PosterHistory.vue')
+    component: () => import('../views/PosterHistory.vue'),
+    meta: {
+      requiresAuth: true
+    }
   },
   {
     path: '/admin/templates',
     name: 'TemplateManager',
     component: () => import('../views/TemplateManager.vue'),
     meta: {
+      requiresAuth: true,
+      requiresAdmin: true
+    }
+  },
+  {
+    path: '/admin/console',
+    name: 'AdminConsole',
+    component: () => import('../views/AdminConsole.vue'),
+    meta: {
+      requiresAuth: true,
       requiresAdmin: true
     }
   },
@@ -38,26 +59,39 @@ const router = createRouter({
   routes
 });
 
-// 添加全局前置守卫检查管理员权限
-router.beforeEach(async (to, from, next) => {
-  if (to.matched.some(record => record.meta.requiresAdmin)) {
-    // 检查用户是否为管理员
-    try {
-      const response = await fetch('/api/admin/check-auth');
-      const result = await response.json();
-      
-      if (result.success && result.isAdmin) {
-        next();
-      } else {
-        next('/');
-      }
-    } catch (error) {
-      console.error('权限检查失败:', error);
-      next('/');
+// 添加全局前置守卫检查登录状态和管理员权限
+router.beforeEach((to, from, next) => {
+  const userStr = localStorage.getItem('user');
+  const user = userStr ? JSON.parse(userStr) : null;
+  const isLoggedIn = !!user;
+  const isAdmin = user && user.role === 'admin';
+  
+  // 检查是否需要登录
+  if (to.matched.some(record => record.meta.requiresAuth)) {
+    if (!isLoggedIn) {
+      // 未登录，跳转到登录页
+      next({
+        path: '/login',
+        query: { redirect: to.fullPath }
+      });
+      return;
     }
-  } else {
-    next();
+    
+    // 检查是否需要管理员权限
+    if (to.matched.some(record => record.meta.requiresAdmin) && !isAdmin) {
+      // 不是管理员，跳转到首页
+      next('/');
+      return;
+    }
   }
+  
+  // 如果已登录且尝试访问登录页，重定向到首页
+  if (to.path === '/login' && isLoggedIn) {
+    next('/');
+    return;
+  }
+  
+  next();
 });
 
 export default router; 

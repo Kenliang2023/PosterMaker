@@ -60,8 +60,28 @@ router.post('/meta-template', isAdmin, async (req, res) => {
       });
     }
     
-    // 保存元提示词模板
     const metaTemplateKey = `meta:${templateId}`;
+    let isNewTemplate = true;
+    
+    // 检查是否已存在同名模板
+    try {
+      const existingTemplate = await db.prompts.get(metaTemplateKey);
+      isNewTemplate = false;
+      
+      // 如果是更新现有模板，创建版本记录
+      const versionId = Date.now().toString();
+      await db.prompts.put(`meta-version:${templateId}:${versionId}`, {
+        ...existingTemplate,
+        versionId
+      });
+    } catch (error) {
+      if (!error.notFound) {
+        throw error;
+      }
+      // 如果不存在，就是新模板
+    }
+    
+    // 保存元提示词模板
     const metaTemplate = {
       templateId,
       template,
@@ -70,11 +90,16 @@ router.post('/meta-template', isAdmin, async (req, res) => {
       updatedAt: new Date().toISOString()
     };
     
+    if (isNewTemplate) {
+      metaTemplate.createdAt = metaTemplate.updatedAt;
+    }
+    
     await db.prompts.put(metaTemplateKey, metaTemplate);
     
     res.json({
       success: true,
-      metaTemplate
+      metaTemplate,
+      isNew: isNewTemplate
     });
   } catch (error) {
     res.status(500).json({
@@ -118,17 +143,22 @@ router.get('/meta-template/:templateId', async (req, res) => {
 });
 
 // 获取所有元提示词模板
-router.get('/meta-templates', async (req, res) => {
+router.get('/meta-templates', isAdmin, async (req, res) => {
   try {
     const metaTemplates = [];
     
-    // 使用迭代器替代流
+    // 使用迭代器查询所有元提示词模板
     for await (const [key, value] of db.prompts.iterator({
       gte: 'meta:',
       lt: 'meta:\xFF'
     })) {
       metaTemplates.push(value);
     }
+    
+    // 按更新时间降序排序
+    metaTemplates.sort((a, b) => {
+      return new Date(b.updatedAt) - new Date(a.updatedAt);
+    });
     
     res.json({
       success: true,
@@ -149,12 +179,21 @@ router.delete('/meta-template/:templateId', isAdmin, async (req, res) => {
     const { templateId } = req.params;
     
     try {
+      // 首先确认元提示词模板存在
       const metaTemplateKey = `meta:${templateId}`;
-      // 检查模板是否存在
       await db.prompts.get(metaTemplateKey);
       
-      // 删除模板
+      // 删除元提示词模板
       await db.prompts.del(metaTemplateKey);
+      
+      // 删除相关版本记录
+      const versionPrefix = `meta-version:${templateId}:`;
+      for await (const [key] of db.prompts.iterator({
+        gte: versionPrefix,
+        lt: versionPrefix + '\xFF'
+      })) {
+        await db.prompts.del(key);
+      }
       
       res.json({
         success: true,
@@ -174,6 +213,168 @@ router.delete('/meta-template/:templateId', isAdmin, async (req, res) => {
     res.status(500).json({
       success: false,
       message: '删除元提示词模板失败',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// 获取元提示词模板的版本历史
+router.get('/meta-template-versions/:templateId', isAdmin, async (req, res) => {
+  try {
+    const { templateId } = req.params;
+    const versions = [];
+    
+    // 获取当前版本
+    try {
+      const metaTemplateKey = `meta:${templateId}`;
+      const currentTemplate = await db.prompts.get(metaTemplateKey);
+      
+      // 添加到版本列表，当前版本会显示在最前面
+      currentTemplate.versionId = 'current';
+      versions.push(currentTemplate);
+      
+      // 获取历史版本
+      const versionPrefix = `meta-version:${templateId}:`;
+      for await (const [key, value] of db.prompts.iterator({
+        gte: versionPrefix,
+        lt: versionPrefix + '\xFF'
+      })) {
+        versions.push(value);
+      }
+      
+      // 按更新时间降序排序
+      versions.sort((a, b) => {
+        return new Date(b.updatedAt) - new Date(a.updatedAt);
+      });
+      
+      res.json({
+        success: true,
+        versions
+      });
+    } catch (error) {
+      if (error.notFound) {
+        res.status(404).json({
+          success: false,
+          message: '元提示词模板不存在'
+        });
+      } else {
+        throw error;
+      }
+    }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: '获取元提示词版本历史失败',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// 恢复元提示词模板版本
+router.post('/restore-meta-template-version', isAdmin, async (req, res) => {
+  try {
+    const { templateId, versionId } = req.body;
+    
+    if (!templateId || !versionId) {
+      return res.status(400).json({
+        success: false,
+        message: '参数不完整，需要提供模板ID和版本ID'
+      });
+    }
+    
+    try {
+      let versionToRestore;
+      
+      // 获取要恢复的版本
+      if (versionId === 'current') {
+        // 当前版本，不需要恢复
+        return res.json({
+          success: true,
+          message: '当前已是最新版本，无需恢复'
+        });
+      } else {
+        const versionKey = `meta-version:${templateId}:${versionId}`;
+        versionToRestore = await db.prompts.get(versionKey);
+      }
+      
+      // 获取当前版本
+      const metaTemplateKey = `meta:${templateId}`;
+      const currentTemplate = await db.prompts.get(metaTemplateKey);
+      
+      // 创建新的版本记录，保存当前版本到历史
+      const newVersionId = Date.now().toString();
+      await db.prompts.put(`meta-version:${templateId}:${newVersionId}`, {
+        ...currentTemplate,
+        versionId: newVersionId
+      });
+      
+      // 更新当前版本为要恢复的版本
+      const updatedTemplate = {
+        ...versionToRestore,
+        updatedAt: new Date().toISOString(),
+        createdBy: req.user.username,
+        description: `从版本 ${versionId} 恢复 - ${versionToRestore.description}`
+      };
+      delete updatedTemplate.versionId; // 移除版本ID
+      
+      await db.prompts.put(metaTemplateKey, updatedTemplate);
+      
+      res.json({
+        success: true,
+        message: '元提示词模板版本已恢复',
+        template: updatedTemplate
+      });
+    } catch (error) {
+      if (error.notFound) {
+        res.status(404).json({
+          success: false,
+          message: '元提示词模板或版本不存在'
+        });
+      } else {
+        throw error;
+      }
+    }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: '恢复元提示词模板版本失败',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// 获取已生成的提示词列表
+router.get('/generated-list', isAdmin, async (req, res) => {
+  try {
+    const prompts = [];
+    const { username } = req.query;
+    
+    // 使用迭代器查询生成的提示词
+    for await (const [key, value] of db.prompts.iterator({
+      gte: 'generated:',
+      lt: 'generated:\xFF'
+    })) {
+      // 如果指定了用户名，则只返回该用户的记录
+      if (username && !key.includes(`generated:${username}:`)) {
+        continue;
+      }
+      
+      prompts.push(value);
+    }
+    
+    // 按创建时间降序排序
+    prompts.sort((a, b) => {
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+    
+    res.json({
+      success: true,
+      prompts
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: '获取生成的提示词列表失败',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }

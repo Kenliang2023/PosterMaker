@@ -57,36 +57,46 @@ router.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
-      return res.status(400).json({ error: '用户名和密码是必填项' });
+      return res.status(400).json({ 
+        success: false,
+        message: '用户名和密码不能为空' 
+      });
     }
 
     try {
       const userData = await db.users.get(`user_${username}`);
       
-      if (userData.password !== password) { // 实际应用中应该比较哈希
-        return res.status(401).json({ error: '密码错误' });
+      if (userData.password === password) {
+        // 登录成功，返回用户信息（不包含密码）
+        const { password: _, ...userDataWithoutPassword } = userData;
+        
+        res.json({
+          success: true,
+          message: '登录成功',
+          user: userDataWithoutPassword
+        });
+      } else {
+        res.status(401).json({
+          success: false,
+          message: '密码错误'
+        });
       }
-
-      // 登录成功，更新最后登录时间
-      userData.lastLoginAt = new Date().toISOString();
-      await db.users.put(`user_${username}`, userData);
-
-      // 不返回密码字段
-      const { password: _, ...userDataWithoutPassword } = userData;
-
-      res.json({
-        success: true,
-        user: userDataWithoutPassword
-      });
     } catch (error) {
       if (error.notFound) {
-        return res.status(404).json({ error: '用户不存在' });
+        res.status(404).json({
+          success: false,
+          message: '用户不存在'
+        });
+      } else {
+        throw error;
       }
-      throw error;
     }
   } catch (error) {
-    console.error('用户登录失败:', error);
-    res.status(500).json({ error: '用户登录失败' });
+    console.error('登录失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '登录失败，请稍后重试'
+    });
   }
 });
 
@@ -237,7 +247,7 @@ router.get('/:username/history', async (req, res) => {
 });
 
 // 初始化管理员账户
-router.post('/init-admin', async (req, res) => {
+router.get('/init-admin', async (req, res) => {
   try {
     const adminUsername = 'admin';
     const adminPassword = 'admin123'; // 实际应用中应使用更强的密码并哈希

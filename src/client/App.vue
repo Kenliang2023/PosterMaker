@@ -5,11 +5,26 @@
         <img src="/RSLOGO.png" alt="RSLOGO" class="app-logo" />
         <h1>LED灯带产品海报生成</h1>
       </div>
-      <div class="nav-links">
+      <div v-if="isLoggedIn" class="nav-links">
         <router-link to="/" class="nav-link">首页</router-link>
         <router-link to="/create" class="nav-link">创建海报</router-link>
         <router-link to="/history" class="nav-link">历史记录</router-link>
         <router-link v-if="isAdmin" to="/admin/templates" class="nav-link">模板管理</router-link>
+        <router-link v-if="isAdmin" to="/admin/console" class="nav-link">管理控制台</router-link>
+        <div class="user-info">
+          <span>{{ currentUser.name || currentUser.username }}</span>
+          <el-dropdown @command="handleCommand">
+            <el-icon class="user-icon"><User /></el-icon>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </div>
+      <div v-else class="login-button-container">
+        <router-link to="/login" class="login-button">登录</router-link>
       </div>
     </header>
     
@@ -24,34 +39,80 @@
 </template>
 
 <script>
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, User } from '@element-plus/icons-vue'
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 export default {
   name: 'App',
   components: {
-    'el-icon-plus': Plus
+    'el-icon-plus': Plus,
+    User
   },
-  data() {
-    return {
-      isAdmin: false,
-      username: 'admin' // 默认用户，实际项目中应该从登录状态获取
-    }
-  },
-  mounted() {
-    this.checkAdminStatus();
-  },
-  methods: {
-    async checkAdminStatus() {
-      try {
-        const response = await fetch(`/api/admin/check-auth?username=${this.username}`);
-        const result = await response.json();
-        
-        if (result.success) {
-          this.isAdmin = result.isAdmin;
+  setup() {
+    const router = useRouter()
+    const isLoggedIn = ref(false)
+    const isAdmin = ref(false)
+    const currentUser = ref({})
+    
+    // 检查登录状态
+    const checkLoginStatus = () => {
+      const userStr = localStorage.getItem('user')
+      if (userStr) {
+        try {
+          const user = JSON.parse(userStr)
+          currentUser.value = user
+          isLoggedIn.value = true
+          isAdmin.value = user.role === 'admin'
+        } catch (e) {
+          // 解析异常，清除失效的存储
+          localStorage.removeItem('user')
+          isLoggedIn.value = false
+          isAdmin.value = false
         }
-      } catch (error) {
-        console.error('检查管理员状态失败:', error);
+      } else {
+        isLoggedIn.value = false
+        isAdmin.value = false
       }
+    }
+    
+    // 处理下拉菜单命令
+    const handleCommand = (command) => {
+      if (command === 'logout') {
+        ElMessageBox.confirm(
+          '确定要退出登录吗？',
+          '退出确认',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }
+        ).then(() => {
+          // 清除登录状态
+          localStorage.removeItem('user')
+          isLoggedIn.value = false
+          isAdmin.value = false
+          currentUser.value = {}
+          ElMessage.success('已成功退出登录')
+          
+          // 跳转到首页
+          router.push('/')
+        }).catch(() => {
+          // 用户取消操作
+        })
+      }
+    }
+    
+    onMounted(() => {
+      checkLoginStatus()
+    })
+    
+    return {
+      isLoggedIn,
+      isAdmin,
+      currentUser,
+      handleCommand
     }
   }
 }
@@ -95,6 +156,7 @@ export default {
 .nav-links {
   display: flex;
   gap: 1.5rem;
+  align-items: center;
 }
 
 .nav-link {
@@ -125,5 +187,45 @@ export default {
   padding: 1rem;
   text-align: center;
   margin-top: auto;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 1rem;
+  padding: 0.5rem;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.user-icon {
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.user-icon:hover {
+  transform: scale(1.1);
+}
+
+.login-button-container {
+  display: flex;
+  align-items: center;
+}
+
+.login-button {
+  color: white;
+  text-decoration: none;
+  font-weight: 500;
+  background-color: rgba(255, 255, 255, 0.2);
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.login-button:hover {
+  background-color: rgba(255, 255, 255, 0.3);
 }
 </style> 

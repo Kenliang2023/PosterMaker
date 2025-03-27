@@ -7,95 +7,71 @@ const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 require('dotenv').config();
 
-// 加载配置
-const config = require('./config');
-config.initDirs(); // 初始化所有目录
-
 // 初始化数据库连接
 const db = require('./db');
+const { createClient } = require('@supabase/supabase-js');
+
+// 创建Supabase客户端用于存储
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
 
 // 创建Express应用
 const app = express();
-const PORT = config.PORT;
+const PORT = process.env.PORT || 3001;
 
 // 中间件配置
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
-// 配置文件上传
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, config.UPLOADS_DIR);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+// 配置内存文件上传（临时存储，后续上传到Supabase）
+const storage = multer.memoryStorage();
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10485760 // 10MB默认
   }
 });
-const upload = multer({ storage: storage });
 
-// 配置静态文件服务
-app.use('/uploads', express.static(config.UPLOADS_DIR));
-app.use('/public', express.static(config.PUBLIC_DIR));
+// 配置静态文件目录
+app.use('/public', express.static(path.join(__dirname, '../../public')));
 
-// API路由
-const apiRoutes = require('./routes');
-app.use('/api', apiRoutes);
+// 确保uploads目录存在
+const uploadsDir = path.join(__dirname, '../../uploads');
+const imagesDir = path.join(uploadsDir, 'images');
+const postersDir = path.join(__dirname, '../../public/uploads/posters');
 
-// 静态文件服务 - 前端应用
-if (fs.existsSync(config.DIST_DIR)) {
-  app.use(express.static(config.DIST_DIR));
-  
-  // 所有其他请求返回Vue应用
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(config.DIST_DIR, 'index.html'));
-  });
-} else {
-  console.warn('警告: dist目录不存在，前端资源可能未构建');
-  // 开发环境下，返回一个临时页面
-  app.get('*', (req, res) => {
-    res.send('应用正在构建中，请稍后刷新页面...');
-  });
-}
+// 创建目录函数
+const ensureDir = (dirPath) => {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+    console.log(`创建目录: ${dirPath}`);
+  }
+};
 
-// 错误处理中间件
-app.use((err, req, res, next) => {
-  console.error('服务器错误:', err);
-  res.status(500).json({ 
-    error: '服务器内部错误',
-    message: config.isProduction ? undefined : err.message
-  });
-});
+// 确保必要的目录存在
+ensureDir(uploadsDir);
+ensureDir(imagesDir);
+ensureDir(postersDir);
 
-// 启动服务器
-app.listen(PORT, async () => {
-  console.log(`服务器运行在 http://localhost:${PORT}`);
-  console.log('环境:', config.NODE_ENV);
-  console.log('存储目录:', config.STORAGE_DIR);
-  
-  // 初始化默认模板
+// 初始化默认模板
+const initializeTemplates = async () => {
   try {
     // 检查是否已经初始化
     let initStatus;
-    let needInit = false;
-    
     try {
       initStatus = await db.prompts.get('prompt-template:init-status');
-      console.log('模板初始化状态:', initStatus.initialized ? '已初始化' : '未初始化');
     } catch (error) {
       if (error.notFound) {
-        console.log('未找到模板初始化状态，将进行初始化');
-        needInit = true;
+        initStatus = { initialized: false };
       } else {
-        console.error('检查模板初始化状态时出错:', error.message);
-        // 继续执行，默认需要初始化
-        needInit = true;
+        throw error;
       }
     }
 
-    if (needInit || (initStatus && !initStatus.initialized)) {
+    if (!initStatus.initialized) {
       console.log('开始初始化默认模板...');
       
       // 初始化产品海报模板
@@ -168,38 +144,78 @@ app.listen(PORT, async () => {
         }
       ];
 
-      let successCount = 0;
       // 保存默认模板
       for (const template of defaultTemplates) {
-        try {
-          await db.prompts.put(`product-template:${template.templateId}`, template);
-          successCount++;
-        } catch (error) {
-          console.error(`保存模板失败 (${template.templateId}):`, error.message);
-        }
+        await db.prompts.put(`product-template:${template.templateId}`, template);
       }
       
       // 更新初始化状态
-      try {
-        await db.prompts.put('prompt-template:init-status', { 
-          initialized: true,
-          count: successCount,
-          timestamp: new Date().toISOString()
-        });
-        console.log(`默认模板初始化完成，成功添加${successCount}个模板`);
-      } catch (error) {
-        console.error('更新模板初始化状态失败:', error.message);
-      }
+      await db.prompts.put('prompt-template:init-status', { initialized: true });
+      
+      console.log('默认模板初始化完成。');
     } else {
-      console.log('默认模板已初始化，跳过');
+      console.log('默认模板已初始化，跳过。');
     }
   } catch (error) {
-    console.error('初始化默认模板过程中发生错误:', error);
-    // 模板初始化失败不应该影响服务器启动
-    console.log('继续启动服务器...');
+    console.error('初始化默认模板失败:', error);
   }
+};
+
+// Supabase文件上传助手函数
+const uploadToSupabase = async (file, folder) => {
+  try {
+    const filename = `${folder}/${Date.now()}-${uuidv4()}${path.extname(file.originalname)}`;
+    
+    const { data, error } = await supabase.storage
+      .from('uploads')
+      .upload(filename, file.buffer, {
+        contentType: file.mimetype,
+        upsert: false
+      });
+      
+    if (error) throw error;
+    
+    // 获取公共URL
+    const { data: urlData } = supabase.storage
+      .from('uploads')
+      .getPublicUrl(filename);
+      
+    return {
+      filename,
+      url: urlData.publicUrl,
+      mimetype: file.mimetype,
+      size: file.size
+    };
+  } catch (error) {
+    console.error('上传文件到Supabase失败:', error);
+    throw new Error(`文件上传失败: ${error.message}`);
+  }
+};
+
+// API路由
+const apiRoutes = require('./routes');
+app.use('/api', apiRoutes);
+
+// 静态文件服务
+app.use(express.static(path.join(__dirname, '../../dist')));
+
+// 所有其他请求返回Vue应用
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../../dist/index.html'));
+});
+
+// 错误处理中间件
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: '服务器内部错误' });
+});
+
+// 启动服务器
+app.listen(PORT, async () => {
+  console.log(`服务器运行在 http://localhost:${PORT}`);
   
-  console.log('服务器初始化完成，等待接收请求...');
+  // 初始化默认模板
+  await initializeTemplates();
 });
 
 module.exports = app; 

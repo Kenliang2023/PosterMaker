@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-该应用通过一体化架构 (Express.js + Vue.js + LevelDB)，结合Gemini API的图像生成能力，为LED灯带厂商提供专业海报生成服务。
+该应用通过一体化架构 (Express.js + Vue.js + Supabase)，结合Gemini API的图像生成能力，为LED灯带厂商提供专业海报生成服务。
 
 ### 核心功能
 
@@ -40,9 +40,11 @@
 - **前端**：Vue.js 3 + Vue Router + Vite
 - **UI框架**：Element Plus + Tailwind CSS
 - **后端**：Node.js + Express.js
-- **数据库**：LevelDB
+- **数据库**：Supabase (PostgreSQL)
+- **文件存储**：Supabase Storage
 - **文件处理**：Multer + UUID
 - **AI接口**：Google Gemini API (2.0 Flash & Exp-Image-Generation)
+- **部署**：Vercel
 
 ## 功能预览
 
@@ -106,9 +108,15 @@ npm install
    ```
    PORT=3000
    NODE_ENV=development
+   SUPABASE_URL=your_supabase_url
+   SUPABASE_KEY=your_supabase_anon_key
    GEMINI_API_KEY=your_api_key_here
    GEMINI_API_URL=https://generativelanguage.googleapis.com/v1/models/gemini-pro-vision:generateContent
    ```
+
+### Supabase配置
+
+参考 [supabase-setup.md](supabase-setup.md) 进行Supabase项目设置，包括创建必要的数据表和存储桶。
 
 ### 开发环境运行
 
@@ -135,7 +143,9 @@ npm start
 
 ## 部署说明
 
-本应用设计为在企业内部局域网环境部署：
+本应用可以部署在以下环境：
+
+### 企业内部局域网部署
 
 1. 在公司服务器上安装Node.js
 2. 克隆应用代码到服务器
@@ -143,18 +153,27 @@ npm start
 4. 启动应用（可配置为系统服务自动启动）
 5. 局域网用户通过服务器IP/主机名访问
 
+### Vercel云端部署
+
+1. 将代码推送到GitHub仓库
+2. 在Vercel中导入项目
+3. 配置环境变量（SUPABASE_URL、SUPABASE_KEY、GEMINI_API_KEY等）
+4. 部署项目
+5. 通过Vercel提供的域名访问应用
+
 ## 系统要求
 
 - Node.js 16.x或更高版本
 - 现代浏览器支持 (Chrome, Firefox, Edge, Safari)
-- 最小服务器配置：2GB RAM, 10GB存储空间
+- 最小服务器配置：2GB RAM
+- Supabase账户（可使用免费层级）
 - Gemini API密钥（需在[Google AI Studio](https://ai.google.dev/)获取）
 
 ## 数据管理
 
-- 所有数据以键值对形式存储在LevelDB中
-- 包括用户上传的图片、生成的海报、提示词模板等
-- 建议定期备份`./data`目录
+- 所有数据存储在Supabase PostgreSQL数据库中
+- 图片和海报文件存储在Supabase Storage中
+- 可以通过Supabase控制台进行数据和文件管理
 
 ## 许可证
 

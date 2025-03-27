@@ -1,175 +1,94 @@
-const Database = require('better-sqlite3');
-const { DB_CONFIG, ensureDir, DB_DIR, VERBOSE } = require('../config');
+const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
 
-// 确保数据库目录存在
-const dbDir = ensureDir(DB_DIR);
+// 从环境变量获取Supabase配置
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
 
-// 初始化数据库连接
-console.log('数据库文件路径:', DB_CONFIG.file);
-
-let db;
-try {
-  db = new Database(DB_CONFIG.file, {
-    verbose: DB_CONFIG.verbose ? console.log : null
-  });
-  console.log('数据库连接成功');
-} catch (error) {
-  console.error('数据库连接失败:', error.message);
-  console.warn('将使用内存数据库作为备用');
-  // 使用内存数据库作为备用
-  db = new Database(':memory:', {
-    verbose: DB_CONFIG.verbose ? console.log : null
-  });
+// 确保环境变量正确设置
+if (!supabaseUrl || !supabaseKey) {
+  console.error('错误: 未找到Supabase配置。请确保SUPABASE_URL和SUPABASE_KEY环境变量已设置。');
+  process.exit(1);
 }
 
-// 创建数据表
-const initDatabase = () => {
-  const tables = {
-    posters: `
-      CREATE TABLE IF NOT EXISTS posters (
-        id TEXT PRIMARY KEY,
-        data TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `,
-    images: `
-      CREATE TABLE IF NOT EXISTS images (
-        id TEXT PRIMARY KEY,
-        data TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `,
-    prompts: `
-      CREATE TABLE IF NOT EXISTS prompts (
-        id TEXT PRIMARY KEY,
-        data TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `,
-    users: `
-      CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        data TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `,
-    analytics: `
-      CREATE TABLE IF NOT EXISTS analytics (
-        id TEXT PRIMARY KEY,
-        data TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `
-  };
+// 创建Supabase客户端
+const supabase = createClient(supabaseUrl, supabaseKey);
 
+// 测试数据库连接
+const testConnection = async () => {
   try {
-    for (const [tableName, schema] of Object.entries(tables)) {
-      db.exec(schema);
-      if (VERBOSE) {
-        console.log(`确保数据表存在: ${tableName}`);
-      }
-    }
-    return true;
+    const { data, error } = await supabase.from('healthcheck').select('*').limit(1);
+    if (error) throw error;
+    console.log('Supabase连接成功!');
   } catch (error) {
-    console.error('初始化数据表失败:', error.message);
-    return false;
+    console.warn('Supabase连接测试失败:', error.message);
+    console.warn('这可能是因为healthcheck表不存在，或者其他连接问题。');
+    console.warn('将继续启动应用，但某些功能可能不可用。');
   }
 };
 
-// 初始化数据库表
-const dbInitialized = initDatabase();
-if (!dbInitialized) {
-  console.warn('数据库初始化失败，应用可能无法正常工作');
-}
-
-// 创建数据库操作接口
-const createDbInterface = (tableName) => {
-  const statements = {
-    insert: db.prepare(`INSERT OR REPLACE INTO ${tableName} (id, data) VALUES (?, ?)`),
-    get: db.prepare(`SELECT data FROM ${tableName} WHERE id = ?`),
-    delete: db.prepare(`DELETE FROM ${tableName} WHERE id = ?`),
-    all: db.prepare(`SELECT id, data FROM ${tableName}`)
-  };
-
+// 封装Supabase操作以模拟原先的LevelDB接口
+const createDBInterface = (tableName) => {
   return {
     async put(key, value) {
-      try {
-        statements.insert.run(key, JSON.stringify(value));
-        return value;
-      } catch (error) {
-        console.error(`数据库写入错误 (${tableName}):`, error);
-        throw error;
-      }
+      // 如果键存在，则更新；否则插入
+      const { data, error } = await supabase
+        .from(tableName)
+        .upsert({ 
+          id: key, 
+          data: value,
+          updated_at: new Date().toISOString()
+        });
+      
+      if (error) throw error;
+      return value;
     },
-
+    
     async get(key) {
-      try {
-        const row = statements.get.get(key);
-        if (!row) {
-          const error = new Error('NotFound');
-          error.notFound = true;
-          error.status = 404;
-          throw error;
-        }
-        return JSON.parse(row.data);
-      } catch (error) {
-        if (error.message === 'NotFound' || error.notFound) {
+      const { data, error } = await supabase
+        .from(tableName)
+        .select('data')
+        .eq('id', key)
+        .single();
+        
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // PostgreSQL "not found" error
           const notFoundError = new Error('NotFound');
           notFoundError.notFound = true;
           notFoundError.status = 404;
+          notFoundError.code = 'LEVEL_NOT_FOUND';
           throw notFoundError;
         }
-        console.error(`数据库读取错误 (${tableName}):`, error);
         throw error;
       }
+      
+      return data.data;
     },
-
+    
     async del(key) {
-      try {
-        const result = statements.delete.run(key);
-        if (result.changes === 0) {
-          const error = new Error('NotFound');
-          error.notFound = true;
-          error.status = 404;
-          throw error;
-        }
-      } catch (error) {
-        console.error(`数据库删除错误 (${tableName}):`, error);
-        throw error;
-      }
-    },
-
-    async *iterator() {
-      try {
-        const rows = statements.all.all();
-        for (const row of rows) {
-          yield {
-            key: row.id,
-            value: JSON.parse(row.data)
-          };
-        }
-      } catch (error) {
-        console.error(`数据库遍历错误 (${tableName}):`, error);
-        throw error;
-      }
+      const { error } = await supabase
+        .from(tableName)
+        .delete()
+        .eq('id', key);
+        
+      if (error) throw error;
+      return true;
     }
   };
 };
 
-// 导出数据库接口
-const dbInterface = {
-  posters: createDbInterface('posters'),
-  images: createDbInterface('images'),
-  prompts: createDbInterface('prompts'),
-  users: createDbInterface('users'),
-  analytics: createDbInterface('analytics')
+// 初始化数据库接口
+const db = {
+  posters: createDBInterface('posters'),
+  images: createDBInterface('images'),
+  prompts: createDBInterface('prompts'),
+  users: createDBInterface('users'),
+  analytics: createDBInterface('analytics')
 };
 
-console.log('数据库系统初始化完成');
+// 导出模块
+console.log('Supabase数据库系统初始化完成');
+testConnection();
 
-module.exports = dbInterface; 
+module.exports = db; 

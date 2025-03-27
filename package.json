@@ -1,7 +1,7 @@
 {
   "name": "postermaker",
   "version": "1.0.0",
-  "description": "一个帮助LED灯带产品制造商快速生成专业营销海报的应用工具�?,
+  "description": "LED�ƴ���ƷӪ���������ɹ���",
   "main": "src/server/server.js",
   "engines": {
     "node": "18.x"
@@ -16,13 +16,12 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
-    "LED",
-    "灯带",
-    "海报",
-    "AI",
-    "Gemini",
-    "营销"
-  ],
+  "LED",
+  "poster",
+  "marketing",
+  "AI",
+  "Gemini"
+],
   "author": "",
   "license": "MIT",
   "dependencies": {

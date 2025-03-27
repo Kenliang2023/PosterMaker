@@ -11,7 +11,7 @@
     "dev-server": "nodemon src/server/server.js",
     "dev": "concurrently \"npm run dev-vite\" \"npm run dev-server\"",
     "build": "vite build",
-    "vercel-build": "vite build",
+    "vercel-build": "node -e \"console.log('Building application...'); require('child_process').execSync('node ./node_modules/vite/bin/vite.js build', {stdio: 'inherit'});\"",
     "start": "node src/server/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

@@ -196,12 +196,15 @@ const uploadToSupabase = async (file, folder) => {
 const apiRoutes = require('./routes');
 app.use('/api', apiRoutes);
 
+// 确定静态文件目录
+const staticPath = path.join(__dirname, '../../dist');
+
 // 静态文件服务
-app.use(express.static(path.join(__dirname, '../../dist')));
+app.use(express.static(staticPath));
 
 // 所有其他请求返回Vue应用
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../../dist/index.html'));
+  res.sendFile(path.join(staticPath, 'index.html'));
 });
 
 // 错误处理中间件
@@ -210,12 +213,16 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: '服务器内部错误' });
 });
 
-// 启动服务器
-app.listen(PORT, async () => {
-  console.log(`服务器运行在 http://localhost:${PORT}`);
-  
-  // 初始化默认模板
-  await initializeTemplates();
-});
-
-module.exports = app; 
+// 在Vercel环境中不启动服务器监听，而是导出app
+if (process.env.VERCEL) {
+  console.log('运行在Vercel环境中，导出Express app');
+  module.exports = app;
+} else {
+  // 启动服务器（本地开发环境）
+  app.listen(PORT, async () => {
+    console.log(`服务器运行在 http://localhost:${PORT}`);
+    
+    // 初始化默认模板
+    await initializeTemplates();
+  });
+} 

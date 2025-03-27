@@ -10,7 +10,8 @@
     "dev-vite": "vite",
     "dev-server": "nodemon src/server/server.js",
     "dev": "concurrently \"npm run dev-vite\" \"npm run dev-server\"",
-    "build": "node ./node_modules/vite/bin/vite.js build",
+    "build": "vite build",
+    "vercel-build": "vite build",
     "start": "node src/server/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

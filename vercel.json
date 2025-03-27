@@ -1,15 +1,12 @@
 {
   "version": 2,
-  "buildCommand": "node ./node_modules/vite/bin/vite.js build",
-  "outputDirectory": "dist",
-  "functions": {
-    "src/server/server.js": {
-      "memory": 1024,
-      "maxDuration": 10
-    }
-  },
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/src/server/server.js" },
-    { "source": "/(.*)", "destination": "/" }
+  "builds": [
+    { "src": "src/server/server.js", "use": "@vercel/node" },
+    { "src": "package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "src/server/server.js" },
+    { "src": "/(.*\\.(js|css|ico|png|jpg|jpeg|svg|webp))", "dest": "/dist/$1" },
+    { "src": "/(.*)", "dest": "/dist/index.html" }
   ]
 } 
